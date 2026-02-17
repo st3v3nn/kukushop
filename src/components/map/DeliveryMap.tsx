@@ -59,14 +59,14 @@ interface DeliveryMapProps {
 // Component to fit bounds to all markers
 const FitBounds = ({ locations }: { locations: Location[] }) => {
   const map = useMap();
-  
+
   useEffect(() => {
     if (locations.length > 0) {
       const bounds = L.latLngBounds(locations.map(loc => [loc.lat, loc.lng]));
       map.fitBounds(bounds, { padding: [50, 50] });
     }
   }, [locations, map]);
-  
+
   return null;
 };
 
@@ -74,7 +74,7 @@ const FitBounds = ({ locations }: { locations: Location[] }) => {
 const NAIROBI_CENTER: Location = { lat: -1.2921, lng: 36.8219 };
 
 export const DeliveryMap = ({
-  restaurantLocation = { lat: -1.2864, lng: 36.8172, label: 'Kuku Ni Sisi Restaurant' },
+  restaurantLocation = { lat: -1.2864, lng: 36.8172, label: 'Speedy Bites Restaurant' },
   customerLocation,
   riderLocation,
   showRoute = true,
@@ -83,7 +83,7 @@ export const DeliveryMap = ({
   interactive = true,
 }: DeliveryMapProps) => {
   const center = riderLocation || restaurantLocation || NAIROBI_CENTER;
-  
+
   const allLocations = [
     restaurantLocation,
     customerLocation,
@@ -93,12 +93,12 @@ export const DeliveryMap = ({
   // Generate a simple route line (in reality, you'd use a routing API)
   const routePoints = showRoute && customerLocation && restaurantLocation
     ? [
-        [restaurantLocation.lat, restaurantLocation.lng],
-        ...(riderLocation 
-          ? [[riderLocation.lat, riderLocation.lng]] 
-          : []),
-        [customerLocation.lat, customerLocation.lng],
-      ] as [number, number][]
+      [restaurantLocation.lat, restaurantLocation.lng],
+      ...(riderLocation
+        ? [[riderLocation.lat, riderLocation.lng]]
+        : []),
+      [customerLocation.lat, customerLocation.lng],
+    ] as [number, number][]
     : [];
 
   return (
@@ -116,39 +116,39 @@ export const DeliveryMap = ({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        
+
         {allLocations.length > 1 && <FitBounds locations={allLocations} />}
-        
+
         {/* Restaurant Marker */}
         {restaurantLocation && (
-          <Marker 
+          <Marker
             position={[restaurantLocation.lat, restaurantLocation.lng]}
             icon={restaurantIcon}
           >
             <Popup>{restaurantLocation.label || 'Restaurant'}</Popup>
           </Marker>
         )}
-        
+
         {/* Customer Marker */}
         {customerLocation && (
-          <Marker 
+          <Marker
             position={[customerLocation.lat, customerLocation.lng]}
             icon={customerIcon}
           >
             <Popup>{customerLocation.label || 'Delivery Location'}</Popup>
           </Marker>
         )}
-        
+
         {/* Rider Marker */}
         {riderLocation && (
-          <Marker 
+          <Marker
             position={[riderLocation.lat, riderLocation.lng]}
             icon={riderIcon}
           >
             <Popup>{riderLocation.label || 'Rider'}</Popup>
           </Marker>
         )}
-        
+
         {/* Route Line */}
         {routePoints.length > 1 && (
           <Polyline
@@ -165,10 +165,10 @@ export const DeliveryMap = ({
 };
 
 // Static map placeholder for non-interactive use
-export const StaticMapPlaceholder = ({ 
+export const StaticMapPlaceholder = ({
   className,
   message = "Live tracking available"
-}: { 
+}: {
   className?: string;
   message?: string;
 }) => (

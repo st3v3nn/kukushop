@@ -1,4 +1,4 @@
-import { Search, Zap, TrendingUp, UtensilsCrossed, Beef, Leaf } from 'lucide-react';
+import { Search, UtensilsCrossed, Beef, Leaf } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
@@ -59,11 +59,11 @@ export const HomePage = () => {
   return (
     <div className="min-h-screen bg-background lg:min-h-0 lg:bg-transparent">
       <Header />
-      
-      <main className="pb-4 lg:pb-0 px-4 lg:px-8">
+
+      <main className="pb-4 lg:pb-0 px-4 md:px-6 lg:px-8">
         {/* Search Bar */}
         <div className="mb-6 pt-4">
-          <Link 
+          <Link
             to="/menu"
             className="flex items-center gap-3 rounded-2xl bg-card px-4 py-4 shadow-card hover:shadow-card-hover transition-all duration-300 ring-1 ring-border/50"
           >
@@ -97,9 +97,9 @@ export const HomePage = () => {
                 }
                 return UtensilsCrossed;
               };
-              
+
               const IconComponent = getIconForCategory(category.name);
-              
+
               return (
                 <Link
                   key={category.id}
@@ -110,7 +110,7 @@ export const HomePage = () => {
                   <div className="bg-gradient-to-br from-primary to-primary/80 p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform duration-300">
                     <IconComponent className="h-8 w-8 text-white" />
                   </div>
-                  
+
                   {/* Text */}
                   <div className="text-center">
                     <h3 className="font-bold text-foreground text-base line-clamp-1">{category.name}</h3>
@@ -126,19 +126,19 @@ export const HomePage = () => {
         {restaurantItems.length > 0 && (
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-4">
-              <Zap className="h-5 w-5 text-accent" />
+              <UtensilsCrossed className="h-5 w-5 text-accent" />
               <h2 className="text-xl font-bold">Restaurant Specials</h2>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {restaurantItems.map(item => (
-                <FoodCard 
-                  key={item.id} 
+                <FoodCard
+                  key={item.id}
                   item={item}
                 />
               ))}
             </div>
-            <Link 
-              to="/menu?category=restaurant"
+            <Link
+              to={`/menu${restaurantItems.length > 0 ? `?category=${categoriesWithCounts.find(c => c.name.toLowerCase() === 'restaurant')?.id}` : ''}`}
               className="block mt-4 text-center py-2 text-primary font-semibold hover:text-primary/80 transition-colors"
             >
               View All Restaurant Items →
@@ -150,19 +150,19 @@ export const HomePage = () => {
         {butcheryItems.length > 0 && (
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="h-5 w-5 text-accent" />
+              <Beef className="h-5 w-5 text-accent" />
               <h2 className="text-xl font-bold">Butchery & Meats</h2>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {butcheryItems.map(item => (
-                <FoodCard 
-                  key={item.id} 
+                <FoodCard
+                  key={item.id}
                   item={item}
                 />
               ))}
             </div>
-            <Link 
-              to="/menu?category=butchery"
+            <Link
+              to={`/menu${butcheryItems.length > 0 ? `?category=${categoriesWithCounts.find(c => c.name.toLowerCase().includes('butch'))?.id}` : ''}`}
               className="block mt-4 text-center py-2 text-primary font-semibold hover:text-primary/80 transition-colors"
             >
               View All Butchery Items →
@@ -177,10 +177,10 @@ export const HomePage = () => {
               <span className="text-2xl">🥬</span>
               <h2 className="text-xl font-bold">Fresh Groceries</h2>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {groceryItems.map(item => (
-                <FoodCard 
-                  key={item.id} 
+                <FoodCard
+                  key={item.id}
                   item={item}
                 />
               ))}

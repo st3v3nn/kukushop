@@ -13,23 +13,23 @@ interface HeaderProps {
   className?: string;
 }
 
-export const Header = ({ 
-  title, 
-  showBack = false, 
+export const Header = ({
+  title,
+  showBack = false,
   showCart = true,
   transparent = false,
-  className 
+  className
 }: HeaderProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { itemCount } = useCart();
-  
+
 
   const isHome = location.pathname === '/';
 
   return (
     <header className={cn(
-      'sticky top-0 z-40 safe-top transition-colors lg:hidden',
+      'sticky top-0 z-40 safe-top transition-colors xl:hidden',
       transparent ? 'bg-transparent' : 'bg-background/95 backdrop-blur-sm',
       className
     )}>
@@ -63,7 +63,7 @@ export const Header = ({
         <div className="flex items-center gap-1">
           <ThemeToggle />
           {showCart && (
-            <Link 
+            <Link
               to="/cart"
               className="relative flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-card transition-transform active:scale-95"
             >

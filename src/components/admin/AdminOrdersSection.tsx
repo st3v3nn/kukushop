@@ -1,241 +1,235 @@
-import { useState } from 'react';
-import { Search, Filter, Eye, UserCheck } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { Package, Bike, Check, X, Clock, MapPin, Phone, User, AlertCircle, Loader2, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { toast } from 'sonner';
-import { mockAdminOrders, mockRiders, type AdminOrder, type Rider } from '@/data/mockData';
-
-const statusColors: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  preparing: 'bg-yellow-100 text-yellow-700',
-  ready_for_pickup: 'bg-purple-100 text-purple-700',
-  on_the_way: 'bg-blue-100 text-blue-700',
-  delivered: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
-};
+import { api } from '@/lib/api';
 
 export const AdminOrdersSection = () => {
-  const [orders, setOrders] = useState<AdminOrder[]>(mockAdminOrders);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
-  const [assignRiderDialogOpen, setAssignRiderDialogOpen] = useState(false);
-  const [orderForRider, setOrderForRider] = useState<AdminOrder | null>(null);
+    const [orders, setOrders] = useState<any[]>([]);
+    const [riders, setRiders] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedOrder, setSelectedOrder] = useState<any>(null);
+    const [isAssigning, setIsAssigning] = useState(false);
 
-  const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.customerName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+    const fetchOrdersAndRiders = async () => {
+        try {
+            const [ordersData, ridersData] = await Promise.all([
+                (api as any).getAdminOrders().catch(() => []),
+                api.getRiders().catch(() => [])
+            ]);
+            setOrders(ordersData || []);
+            setRiders(ridersData || []);
+        } catch (err) {
+            console.error('Failed to fetch admin data', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-  const handleStatusChange = (orderId: string, newStatus: string) => {
-    setOrders(prev => prev.map(order => 
-      order.id === orderId ? { ...order, status: newStatus as AdminOrder['status'] } : order
-    ));
-    toast.success(`Order status updated to ${newStatus.replace('_', ' ')}`);
-  };
+    useEffect(() => {
+        fetchOrdersAndRiders();
+        const interval = setInterval(fetchOrdersAndRiders, 10000); // Poll every 10 seconds
+        return () => clearInterval(interval);
+    }, []);
 
-  const handleAssignRider = (rider: Rider) => {
-    if (orderForRider) {
-      setOrders(prev => prev.map(order => 
-        order.id === orderForRider.id ? { ...order, rider, status: 'on_the_way' } : order
-      ));
-      toast.success(`Assigned ${rider.name} to order ${orderForRider.orderNumber}`);
-      setAssignRiderDialogOpen(false);
-      setOrderForRider(null);
-    }
-  };
+    const handleUpdateStatus = async (orderId: string, status: string) => {
+        try {
+            await api.updateOrderStatusAdmin(orderId, status);
+            toast.success(`Order status updated to ${status}`);
+            fetchOrdersAndRiders();
+        } catch (err) {
+            toast.error('Failed to update status');
+        }
+    };
 
-  return (
-    <div className="space-y-4">
-      {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search orders..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[180px] bg-background">
-            <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="Filter status" />
-          </SelectTrigger>
-          <SelectContent className="bg-background border shadow-lg z-50">
-            <SelectItem value="all">All Orders</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="preparing">Preparing</SelectItem>
-            <SelectItem value="ready_for_pickup">Ready</SelectItem>
-            <SelectItem value="on_the_way">On the Way</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+    const handleAssignRider = async (orderId: string, riderId: string) => {
+        setIsAssigning(true);
+        try {
+            await api.assignRiderToOrder(orderId, riderId);
+            toast.success('Rider assigned successfully');
+            setSelectedOrder(null);
+            fetchOrdersAndRiders();
+        } catch (err) {
+            toast.error('Failed to assign rider');
+        } finally {
+            setIsAssigning(false);
+        }
+    };
 
-      {/* Orders List */}
-      <div className="space-y-3">
-        {filteredOrders.map((order) => (
-          <Card key={order.id}>
-            <CardContent className="p-4">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="font-semibold">{order.orderNumber}</h3>
-                    <Badge className={statusColors[order.status]}>
-                      {order.status.replace('_', ' ')}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{order.customerName}</p>
-                  <p className="text-sm text-muted-foreground">{order.customerPhone}</p>
-                  <PriceDisplay price={order.total} className="font-semibold mt-1" />
-                </div>
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'pending': return 'bg-yellow-500/10 text-yellow-600';
+            case 'preparing': return 'bg-blue-500/10 text-blue-600';
+            case 'on_the_way': return 'bg-purple-500/10 text-purple-600';
+            case 'arrived': return 'bg-indigo-500/10 text-indigo-600';
+            case 'delivered': return 'bg-green-500/10 text-green-600';
+            case 'cancelled': return 'bg-red-500/10 text-red-600';
+            default: return 'bg-gray-500/10 text-gray-600';
+        }
+    };
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedOrder(order)}
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-
-                  {order.status === 'pending' && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleStatusChange(order.id, 'preparing')}
-                    >
-                      Accept
-                    </Button>
-                  )}
-
-                  {order.status === 'preparing' && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleStatusChange(order.id, 'ready_for_pickup')}
-                    >
-                      Mark Ready
-                    </Button>
-                  )}
-
-                  {order.status === 'ready_for_pickup' && !order.rider && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setOrderForRider(order);
-                        setAssignRiderDialogOpen(true);
-                      }}
-                    >
-                      <UserCheck className="h-4 w-4 mr-1" />
-                      Assign Rider
-                    </Button>
-                  )}
-
-                  {order.rider && (
-                    <Badge variant="outline" className="bg-blue-50">
-                      🏍️ {order.rider.name}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Order Details Dialog */}
-      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-md bg-background">
-          <DialogHeader>
-            <DialogTitle>{selectedOrder?.orderNumber}</DialogTitle>
-          </DialogHeader>
-          {selectedOrder && (
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">Customer</h4>
-                <p className="text-sm">{selectedOrder.customerName}</p>
-                <p className="text-sm text-muted-foreground">{selectedOrder.customerPhone}</p>
-              </div>
-              <div>
-                <h4 className="font-medium mb-2">Delivery Address</h4>
-                <p className="text-sm">{selectedOrder.address.street}</p>
-                <p className="text-sm text-muted-foreground">{selectedOrder.address.city}</p>
-                {selectedOrder.address.landmark && (
-                  <p className="text-sm text-muted-foreground">{selectedOrder.address.landmark}</p>
-                )}
-              </div>
-              <div>
-                <h4 className="font-medium mb-2">Items</h4>
-                {selectedOrder.items.map((item) => (
-                  <div key={item.id} className="flex justify-between text-sm">
-                    <span>{item.quantity}x {item.menuItem.name}</span>
-                    <PriceDisplay price={item.totalPrice} />
-                  </div>
-                ))}
-              </div>
-              <div className="border-t pt-3">
-                <div className="flex justify-between font-semibold">
-                  <span>Total</span>
-                  <PriceDisplay price={selectedOrder.total} />
-                </div>
-              </div>
+    if (isLoading && orders.length === 0) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        );
+    }
 
-      {/* Assign Rider Dialog */}
-      <Dialog open={assignRiderDialogOpen} onOpenChange={setAssignRiderDialogOpen}>
-        <DialogContent className="max-w-sm bg-background">
-          <DialogHeader>
-            <DialogTitle>Assign Rider</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {mockRiders.filter(r => r.status === 'available').map((rider) => (
-              <button
-                key={rider.id}
-                onClick={() => handleAssignRider(rider)}
-                className="w-full p-3 border rounded-lg hover:bg-muted transition-colors text-left"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{rider.name}</p>
-                    <p className="text-sm text-muted-foreground">{rider.phone}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm">⭐ {rider.rating}</p>
-                    <p className="text-xs text-muted-foreground">{rider.completedToday} today</p>
-                  </div>
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Manage Orders</h2>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>Updates every 10s</span>
                 </div>
-              </button>
-            ))}
-            {mockRiders.filter(r => r.status === 'available').length === 0 && (
-              <p className="text-center text-muted-foreground py-4">No riders available</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+            </div>
+
+            <div className="space-y-4">
+                {orders.length === 0 ? (
+                    <Card>
+                        <CardContent className="h-40 flex flex-col items-center justify-center text-muted-foreground">
+                            <Package className="h-8 w-8 mb-2 opacity-20" />
+                            <p>No orders found</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    orders.map((order) => (
+                        <Card key={order.id} className="overflow-hidden">
+                            <div className="border-l-4 border-primary p-4">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-bold text-lg">#{order.order_number || order.id.slice(0, 8)}</span>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                                                {order.status.replace('_', ' ').toUpperCase()}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <User className="h-3 w-3" />
+                                                {order.customer_name || 'Guest User'}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {new Date(order.created_at || order.createdAt).toLocaleTimeString()}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Dialog open={selectedOrder?.id === order.id} onOpenChange={(open) => !open && setSelectedOrder(null)}>
+                                            <DialogTrigger asChild>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setSelectedOrder(order)}
+                                                    className="flex items-center gap-2"
+                                                >
+                                                    <Bike className="h-4 w-4" />
+                                                    {order.rider_name ? `Assigned: ${order.rider_name}` : 'Assign Rider'}
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Assign Rider to #{order.order_number || order.id.slice(0, 8)}</DialogTitle>
+                                                </DialogHeader>
+                                                <div className="space-y-4 pt-4">
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-medium">Select a Rider</label>
+                                                        <Select onValueChange={(val) => handleAssignRider(order.id, val)} disabled={isAssigning}>
+                                                            <SelectTrigger>
+                                                                <SelectValue placeholder="Select available rider..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {riders.map(rider => (
+                                                                    <SelectItem key={rider.id} value={rider.id}>
+                                                                        <div className="flex flex-col">
+                                                                            <span>{rider.name}</span>
+                                                                            <span className="text-xs text-muted-foreground">{rider.phone || 'No phone'}</span>
+                                                                        </div>
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    {isAssigning && (
+                                                        <div className="flex items-center justify-center py-2">
+                                                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </DialogContent>
+                                        </Dialog>
+
+                                        <Select
+                                            value={order.status}
+                                            onValueChange={(val) => handleUpdateStatus(order.id, val)}
+                                        >
+                                            <SelectTrigger className="w-[140px] h-9">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="pending">Pending</SelectItem>
+                                                <SelectItem value="preparing">Preparing</SelectItem>
+                                                <SelectItem value="on_the_way">On Way</SelectItem>
+                                                <SelectItem value="arrived">Arrived</SelectItem>
+                                                <SelectItem value="delivered">Delivered</SelectItem>
+                                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+
+                                        <div className="pl-4 border-l">
+                                            <PriceDisplay price={order.total} className="font-bold text-lg" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Expanded Details */}
+                                <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                    <div className="space-y-2">
+                                        <p className="flex items-start gap-2 text-muted-foreground">
+                                            <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
+                                            <span>{order.address || 'No address provided'}</span>
+                                        </p>
+                                        {(order.customer_phone || order.phone) && (
+                                            <p className="flex items-center gap-2 text-muted-foreground">
+                                                <Phone className="h-4 w-4" />
+                                                {order.customer_phone || order.phone}
+                                            </p>
+                                        )}
+                                        {order.payment_method && (
+                                            <p className="flex items-center gap-2 text-muted-foreground">
+                                                <CreditCard className="h-4 w-4" />
+                                                <span className="capitalize">{order.payment_method.replace('_', ' ')}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="bg-muted/50 p-3 rounded-lg">
+                                        <p className="font-semibold mb-1 flex items-center gap-2">
+                                            <Package className="h-4 w-4" />
+                                            Order Items
+                                        </p>
+                                        <div className="space-y-1">
+                                            {order.items?.map((item: any, idx: number) => (
+                                                <div key={idx} className="flex justify-between">
+                                                    <span>{item.quantity}x {item.name}</span>
+                                                    <PriceDisplay price={item.total_price} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    ))
+                )}
+            </div>
+        </div>
+    );
 };

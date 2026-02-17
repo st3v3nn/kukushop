@@ -17,7 +17,7 @@ export const MenuPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const activeCategory = searchParams.get('category') || 'all';
 
   useEffect(() => {
@@ -43,21 +43,21 @@ export const MenuPage = () => {
 
   const filteredItems = useMemo(() => {
     let items = menuItems;
-    
+
     // Filter by category
     if (activeCategory !== 'all') {
       items = items.filter(item => item.categoryId === activeCategory);
     }
-    
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      items = items.filter(item => 
+      items = items.filter(item =>
         item.name.toLowerCase().includes(query) ||
         item.description.toLowerCase().includes(query)
       );
     }
-    
+
     return items;
   }, [activeCategory, searchQuery, menuItems]);
 
@@ -85,8 +85,8 @@ export const MenuPage = () => {
   return (
     <div className="min-h-screen bg-background lg:min-h-0 lg:bg-transparent">
       <Header title="Menu" showBack />
-      
-      <main className="pb-4 lg:pb-0">
+
+      <main className="pb-4 lg:pb-0 px-4 md:px-6">
         {/* Search Bar - Hidden on desktop */}
         <div className="px-4 mb-4 lg:hidden">
           <div className="relative">
@@ -147,7 +147,7 @@ export const MenuPage = () => {
               <p className="mb-3 text-sm text-muted-foreground">
                 {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'} found
               </p>
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredItems.map(item => (
                   <FoodCard key={item.id} item={item} />
                 ))}

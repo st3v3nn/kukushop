@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 
 // Contexts
@@ -26,7 +26,11 @@ import ProfilePage from "./pages/ProfilePage";
 import HelpPage from "./pages/HelpPage";
 import LoginPage from "./pages/LoginPage";
 import OnboardingPage from "./pages/OnboardingPage";
+import OrderConfirmationPage from "./pages/OrderConfirmationPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import NotFound from "./pages/NotFound";
+
 
 // Profile Sub-Pages
 import EditProfilePage from "./pages/profile/EditProfilePage";
@@ -37,16 +41,21 @@ import FavoritesPage from "./pages/FavoritesPage";
 import SettingsPage from "./pages/SettingsPage";
 
 // Pages - Admin
-import AdminLoginPage from "./pages/admin/AdminLoginPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminMenuPage from "./pages/admin/AdminMenuPage";
+import AdminOrdersPage from "./pages/admin/AdminOrdersPage";
+import AdminRidersPage from "./pages/admin/AdminRidersPage";
+import AdminReportsPage from "./pages/admin/AdminReportsPage";
+
 
 // Pages - Rider
-import RiderLoginPage from "./pages/rider/RiderLoginPage";
 import RiderDashboardPage from "./pages/rider/RiderDashboardPage";
 
 // Layout
 import { AppLayout } from "./components/layout/AppLayout";
+
+// Auth
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -76,48 +85,124 @@ const App = () => {
             <TooltipProvider>
               <Toaster />
               <Sonner position="top-center" />
-              <BrowserRouter>
-                <Routes>
-                  {/* Auth & Onboarding routes (no bottom nav) */}
-                  <Route path="/onboarding" element={<OnboardingPage />} />
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/signup" element={<LoginPage />} />
-                  
-                  {/* Main app routes with bottom nav */}
-                  <Route element={<AppLayout />}>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/menu" element={<MenuPage />} />
-                    <Route path="/menu/:id" element={<MealDetailsPage />} />
-                    <Route path="/cart" element={<CartPage />} />
-                    <Route path="/checkout" element={<CheckoutPage />} />
-                    <Route path="/payment" element={<PaymentPage />} />
-                    <Route path="/orders" element={<OrdersPage />} />
-                    <Route path="/orders/:id" element={<OrderTrackingPage />} />
-                    <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/profile/edit" element={<EditProfilePage />} />
-                    <Route path="/profile/addresses" element={<AddressesPage />} />
-                    <Route path="/profile/payments" element={<PaymentsPage />} />
-                    <Route path="/profile/notifications" element={<NotificationsPage />} />
-                    <Route path="/favorites" element={<FavoritesPage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/help" element={<HelpPage />} />
-                  </Route>
-                  
-                  {/* Admin Routes */}
-                  <Route path="/admin/login" element={<AdminLoginPage />} />
-                  <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
-                  <Route path="/admin/menu" element={<AdminMenuPage />} />
-                  <Route path="/admin" element={<AdminDashboardPage />} />
-                  
-                  {/* Rider Routes */}
-                  <Route path="/rider/login" element={<RiderLoginPage />} />
-                  <Route path="/rider/dashboard" element={<RiderDashboardPage />} />
-                  <Route path="/rider" element={<RiderDashboardPage />} />
-                  
-                  {/* Catch-all */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </BrowserRouter>
+              {/** Use object-based router and opt-in to v7 future flags to silence deprecation warnings */}
+              <RouterProvider
+                router={createBrowserRouter(
+                  [
+                    { path: "/onboarding", element: <OnboardingPage /> },
+                    { path: "/login", element: <LoginPage /> },
+                    { path: "/signup", element: <LoginPage /> },
+                    { path: "/forgot-password", element: <ForgotPasswordPage /> },
+                    { path: "/reset-password", element: <ResetPasswordPage /> },
+
+                    // Main app routes (wrapped with AppLayout)
+                    {
+                      element: <AppLayout />,
+                      children: [
+                        { path: "/", element: <HomePage /> },
+                        { path: "/menu", element: <MenuPage /> },
+                        { path: "/menu/:id", element: <MealDetailsPage /> },
+                        { path: "/cart", element: <CartPage /> },
+                        {
+                          path: "/checkout",
+                          element: <ProtectedRoute allowedRoles={['customer', 'admin']}><CheckoutPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/payment",
+                          element: <ProtectedRoute allowedRoles={['customer', 'admin']}><PaymentPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/orders",
+                          element: <ProtectedRoute allowedRoles={['customer', 'admin']}><OrdersPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/orders/:id",
+                          element: <ProtectedRoute allowedRoles={['customer', 'admin', 'rider']}><OrderTrackingPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/profile",
+                          element: <ProtectedRoute><ProfilePage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/profile/edit",
+                          element: <ProtectedRoute><EditProfilePage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/profile/addresses",
+                          element: <ProtectedRoute><AddressesPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/profile/payments",
+                          element: <ProtectedRoute><PaymentsPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/profile/notifications",
+                          element: <ProtectedRoute><NotificationsPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/favorites",
+                          element: <ProtectedRoute><FavoritesPage /></ProtectedRoute>
+                        },
+                        {
+                          path: "/settings",
+                          element: <ProtectedRoute><SettingsPage /></ProtectedRoute>
+                        },
+                        { path: "/order-confirmation/:id", element: <OrderConfirmationPage /> },
+                        { path: "/help", element: <HelpPage /> }
+                      ]
+                    },
+
+
+                    // Admin
+                    {
+                      path: "/admin",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/admin/dashboard",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/admin/orders",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminOrdersPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/admin/riders",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminRidersPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/admin/menu",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminMenuPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/admin/reports",
+                      element: <ProtectedRoute allowedRoles={['admin']}><AdminReportsPage /></ProtectedRoute>
+                    },
+
+
+                    // Rider
+                    {
+                      path: "/rider",
+                      element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute>
+                    },
+                    {
+                      path: "/rider/dashboard",
+                      element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute>
+                    },
+
+                    // Catch-all
+                    { path: "*", element: <NotFound /> }
+                  ],
+
+                  {
+                    future: {
+                      v7_relativeSplatPath: true,
+                      // @ts-expect-error - Future flag for v7
+                      v7_startTransition: true
+                    }
+                  }
+                )}
+              />
             </TooltipProvider>
           </CartProvider>
         </AuthProvider>

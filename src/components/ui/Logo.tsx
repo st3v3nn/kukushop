@@ -14,9 +14,9 @@ export const Logo = ({ size = 'md', className = '' }: LogoProps) => {
   };
 
   return (
-    <img 
-      src={logoImage} 
-      alt="Kuku Ni Sisi" 
+    <img
+      src={logoImage}
+      alt="Speedy Bites"
       className={`${sizes[size]} object-contain rounded-full ${className}`}
     />
   );

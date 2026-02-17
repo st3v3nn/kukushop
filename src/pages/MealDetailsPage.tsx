@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PriceDisplay, formatPrice } from '@/components/ui/PriceDisplay';
 import { useCart } from '@/contexts/CartContext';
 import { cn } from '@/lib/utils';
+import { getImageURL } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import type { MenuItem } from '@/lib/api';
@@ -100,7 +101,7 @@ export const MealDetailsPage = () => {
       {/* Hero Image */}
       <div className="relative h-72 bg-muted">
         <img
-          src={item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80'}
+          src={getImageURL(item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80')}
           alt={item.name}
           className="h-full w-full object-cover"
         />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getImageURL, apiFetch } from '@/lib/api';
 import { Trash2, Edit2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,9 +50,7 @@ export const AdminCategoriesSection = () => {
   const fetchCategories = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:4000/api/admin/categories');
-      if (!response.ok) throw new Error('Failed to fetch categories');
-      const data = await response.json();
+      const data = await apiFetch<Category[]>('/admin/categories');
       setCategories(data);
     } catch (error) {
       toast.error('Failed to load categories');
@@ -137,21 +136,13 @@ export const AdminCategoriesSection = () => {
         submitFormData.append('image', imageFile);
       }
 
-      const url = editingCategory
-        ? `http://localhost:4000/api/admin/categories/${editingCategory.id}`
-        : 'http://localhost:4000/api/admin/categories';
-
       const method = editingCategory ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
+      const data = await apiFetch<Category>(editingCategory
+        ? `/admin/categories/${editingCategory.id}`
+        : '/admin/categories', {
         method,
         body: submitFormData,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to save category');
-      }
 
       toast.success(editingCategory ? 'Category updated!' : 'Category created!');
       resetForm();
@@ -167,13 +158,9 @@ export const AdminCategoriesSection = () => {
     if (!confirm(`Are you sure you want to delete "${categoryName}"?`)) return;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/categories/${categoryId}`, {
+      await apiFetch(`/admin/categories/${categoryId}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete category');
-      }
 
       toast.success('Category deleted');
       fetchCategories();
@@ -197,9 +184,9 @@ export const AdminCategoriesSection = () => {
               <div className="relative border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-primary transition-colors">
                 {imagePreview ? (
                   <div className="relative inline-block">
-                    <img 
-                      src={imagePreview} 
-                      alt="Preview" 
+                    <img
+                      src={getImageURL(imagePreview)}
+                      alt="Preview"
                       className="h-48 w-48 object-cover rounded-lg"
                     />
                     <button
@@ -215,7 +202,7 @@ export const AdminCategoriesSection = () => {
                     </button>
                   </div>
                 ) : (
-                  <div 
+                  <div
                     onClick={() => fileInputRef.current?.click()}
                     className="flex flex-col items-center justify-center cursor-pointer py-12"
                   >
@@ -351,7 +338,7 @@ export const AdminCategoriesSection = () => {
             <Card key={category.id} className="overflow-hidden hover:shadow-lg transition-shadow">
               {category.image_url && (
                 <img
-                  src={category.image_url}
+                  src={getImageURL(category.image_url)}
                   alt={category.name}
                   className="w-full h-40 object-cover"
                 />

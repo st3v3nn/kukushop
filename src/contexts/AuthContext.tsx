@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { validateEmail, validatePassword, loginRateLimiter, isTokenExpired, getTokenExpiry } from '@/lib/security';
 
@@ -15,7 +16,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ error: Error | null }>;
+  login: (email: string, password: string) => Promise<{ error: Error | null; user?: User }>;
   signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null }>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
@@ -41,16 +42,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Check token expiry on mount and periodically
   useEffect(() => {
+    const isProbablyJwt = (t: string | null) => typeof t === 'string' && t.split('.').length === 3;
+
     const checkTokenExpiry = () => {
       const token = localStorage.getItem(TOKEN_KEY);
-      if (token && isTokenExpired(token)) {
+      // Only attempt expiry checks for JWT-like tokens. Dev tokens are opaque and should not auto-expire client-side.
+      if (token && isProbablyJwt(token) && isTokenExpired(token)) {
         console.warn('Token expired, logging out');
         logout();
       }
     };
 
     checkTokenExpiry();
-    const interval = setInterval(checkTokenExpiry, 60000); // Check every minute
+    const interval = setInterval(checkTokenExpiry, 5 * 60 * 1000); // Check every 5 minutes
     return () => clearInterval(interval);
   }, []);
 
@@ -72,27 +76,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setIsLoading(true);
       const result = await api.login(email, password);
-      
-      if (result.user) {
-        const userData: User = {
-          id: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          phone: result.user.phone,
-          avatar_url: result.user.avatar_url,
-          role: result.user.role || 'customer',
-        };
-        
-        setUser(userData);
-        api.setAuthToken(result.token);
-        
-        // Store user data for recovery
-        localStorage.setItem(USER_KEY, JSON.stringify(userData));
-        
-        // Reset rate limiter on successful login
-        loginRateLimiter.reset(`login_${email}`);
+
+      // Ensure we actually received user and tokens
+      if (!result || !result.user || !result.accessToken || !result.refreshToken) {
+        return { error: new Error('Invalid login response from server') };
       }
-      return { error: null };
+
+      const userData: User = {
+        id: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+        phone: result.user.phone,
+        avatar_url: result.user.avatar_url,
+        role: result.user.role || 'customer',
+      };
+
+      // Persist auth state immediately
+      setUser(userData);
+      api.setAuthToken(result.accessToken);
+      localStorage.setItem(REFRESH_TOKEN_KEY, result.refreshToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(userData));
+
+      // Reset rate limiter on successful login
+      loginRateLimiter.reset(`login_${email}`);
+
+      return { error: null, user: userData };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
       return { error: new Error(errorMessage) };
@@ -124,7 +132,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: name || '',
       });
       
-      if (result.user) {
+      if (result.user && result.accessToken && result.refreshToken) {
         const userData: User = {
           id: result.user.id,
           email: result.user.email,
@@ -133,7 +141,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         
         setUser(userData);
-        api.setAuthToken(result.token);
+        api.setAuthToken(result.accessToken);
+        localStorage.setItem(REFRESH_TOKEN_KEY, result.refreshToken);
         localStorage.setItem(USER_KEY, JSON.stringify(userData));
       }
       return { error: null };
@@ -151,8 +160,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!token) return false;
 
       const response = await api.refreshAuthToken(token);
-      api.setAuthToken(response.token);
-      return true;
+      if (response && response.accessToken) {
+        api.setAuthToken(response.accessToken);
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Token refresh failed:', error);
       return false;
@@ -160,24 +172,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(async () => {
+    // Read refresh token first so we can invalidate it server-side
+    const r = localStorage.getItem(REFRESH_TOKEN_KEY);
+    // Clear local auth state immediately to improve UX
+    setUser(null);
+    api.clearAuth();
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+
     try {
-      await api.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      setUser(null);
-      api.clearAuth();
-      localStorage.removeItem(USER_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      // Fire-and-forget server logout; send refresh token so server can invalidate it
+      api.logout(r).catch(err => console.error('Logout error:', err));
+    } catch (err) {
+      console.error('Logout invocation error:', err);
     }
   }, []);
 
   const updateUser = useCallback((updates: Partial<User>) => {
     setUser(prev => {
       if (!prev) return null;
-      const updated = { ...prev, ...updates };
+      // Prevent changing the email client-side; email is immutable after account creation
+      const safeUpdates = { ...updates };
+      if ('email' in safeUpdates) delete (safeUpdates as Partial<User>).email;
+      const updated = { ...prev, ...safeUpdates };
       localStorage.setItem(USER_KEY, JSON.stringify(updated));
+
+      // Persist to server (fire-and-forget). If it fails, notify and keep local changes.
+      (async () => {
+        try {
+          await api.updateProfile(safeUpdates);
+        } catch (err) {
+          console.error('Failed to persist profile update', err);
+          toast.error('Failed to save profile to server');
+        }
+      })();
+
       return updated;
     });
   }, []);

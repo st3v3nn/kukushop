@@ -24,7 +24,7 @@ export const CartPage = () => {
   return (
     <div className="min-h-screen bg-background pb-32 lg:min-h-0 lg:bg-transparent lg:pb-0">
       <Header title="Your Cart" showBack showCart={false} />
-      
+
       <main className="px-4 py-4">
         {/* Item count & clear */}
         <div className="flex items-center justify-between mb-4">
@@ -74,7 +74,7 @@ export const CartPage = () => {
       </main>
 
       {/* Checkout Button */}
-      <div className="fixed bottom-20 left-0 right-0 z-40 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-6 md:bottom-0 safe-bottom">
+      <div className="fixed bottom-20 left-0 right-0 z-40 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-6 xl:bottom-0 safe-bottom">
         <Button
           onClick={() => navigate('/checkout')}
           className="w-full h-14 text-base font-semibold gap-2"

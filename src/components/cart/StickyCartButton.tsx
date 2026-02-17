@@ -15,7 +15,7 @@ export const StickyCartButton = ({ className }: StickyCartButtonProps) => {
 
   return (
     <div className={cn(
-      'fixed bottom-20 left-4 right-4 z-40 md:bottom-4 md:left-auto md:right-4 md:max-w-sm lg:hidden animate-slide-up',
+      'fixed bottom-20 left-4 right-4 z-40 xl:bottom-4 xl:left-auto xl:right-4 xl:max-w-sm lg:hidden animate-slide-up',
       className
     )}>
       <Link

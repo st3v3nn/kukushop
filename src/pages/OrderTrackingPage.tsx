@@ -8,36 +8,10 @@ import { formatPrice } from '@/components/ui/PriceDisplay';
 import { DeliveryMap } from '@/components/map/DeliveryMap';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/lib/api';
-
-interface Order {
-  id: string;
-  status: string;
-  total: number;
-  delivery_fee: number;
-  subtotal: number;
-  discount: number;
-  notes: string | null;
-  estimated_delivery_time: string | null;
-  created_at: string;
-  customer_id: string;
-  delivery_address_id: string | null;
-  order_items: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    notes: string | null;
-  }>;
-  delivery_address?: {
-    street: string;
-    city: string;
-    phone: string | null;
-  };
-}
+import { api, type Order } from '@/lib/api';
 
 interface RiderAssignment {
+
   rider_id: string;
   status: string;
   rider?: {
@@ -67,14 +41,16 @@ export const OrderTrackingPage = () => {
     try {
       // Fetch order from API
       const orderData = await api.getOrder(id!);
-      
+
       if (!orderData) {
         toast.error('Order not found');
         navigate('/orders');
         return;
       }
 
-      setOrder(orderData as Order);
+      setOrder(orderData);
+
+
       // Rider assignment would be fetched from API endpoint if it existed
       setRiderAssignment(null);
     } catch (error) {
@@ -150,19 +126,20 @@ export const OrderTrackingPage = () => {
 
   const isActive = ['confirmed', 'preparing', 'on_the_way'].includes(order.status);
 
-  // Customer location from order address (simulated coordinates)
-  const customerLocation = { 
-    lat: -1.2750, 
-    lng: 36.8150, 
-    label: order.delivery_address?.street || 'Delivery Address'
+  const customerLocation = {
+    lat: Number(order.address?.lat) || -1.2750,
+    lng: Number(order.address?.lng) || 36.8150,
+    label: order.address?.street || 'Delivery Address'
   };
+
+
 
   const orderNumber = `ORD-${String(order.id).slice(-6).toUpperCase()}`;
 
   return (
     <div className="min-h-screen bg-background pb-8 lg:min-h-0 lg:bg-transparent lg:pb-0">
       <Header title={`Order ${orderNumber}`} showBack />
-      
+
       <main className="px-4 py-4 space-y-4">
         {/* Live Map for Active Orders */}
         {order.status === 'on_the_way' && (
@@ -179,12 +156,13 @@ export const OrderTrackingPage = () => {
                 <span className="text-sm text-muted-foreground">Live tracking</span>
               </div>
               <span className="text-sm font-medium">
-                ETA: {order.estimated_delivery_time ? 
-                  new Date(order.estimated_delivery_time).toLocaleTimeString('en-KE', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                ETA: {order.estimatedDelivery ?
+                  new Date(order.estimatedDelivery).toLocaleTimeString('en-KE', {
+                    hour: '2-digit',
+                    minute: '2-digit'
                   }) : 'TBD'}
               </span>
+
             </div>
           </section>
         )}
@@ -193,23 +171,25 @@ export const OrderTrackingPage = () => {
         <section className="rounded-xl bg-card p-4 shadow-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Order Status</h3>
-            <OrderStatusBadge status={order.status as any} />
+            <OrderStatusBadge status={(order.status || 'pending') as any} />
+
           </div>
-          
+
           {isActive && (
             <>
-              <OrderProgress status={order.status as any} className="mb-4" />
-              {order.estimated_delivery_time && (
+              <OrderProgress status={order.status} className="mb-4" />
+              {order.estimatedDelivery && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  <span>Estimated delivery: {new Date(order.estimated_delivery_time).toLocaleTimeString('en-KE', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  <span>Estimated delivery: {new Date(order.estimatedDelivery).toLocaleTimeString('en-KE', {
+                    hour: '2-digit',
+                    minute: '2-digit'
                   })}</span>
                 </div>
               )}
             </>
           )}
+
         </section>
 
         {/* Rider Info (if on the way) */}
@@ -235,24 +215,20 @@ export const OrderTrackingPage = () => {
         )}
 
         {/* Delivery Address */}
-        {order.delivery_address && (
+        {order.address && (
           <section className="rounded-xl bg-card p-4 shadow-card">
             <div className="flex items-center gap-3 mb-3">
               <MapPin className="h-5 w-5 text-primary" />
               <h3 className="font-semibold">Delivery Address</h3>
             </div>
             <p className="text-muted-foreground">
-              {order.delivery_address.street}
+              {order.address.street}
               <br />
-              {order.delivery_address.city}
+              {order.address.city}
             </p>
-            {order.delivery_address.phone && (
-              <p className="text-sm text-muted-foreground mt-1">
-                Phone: {order.delivery_address.phone}
-              </p>
-            )}
           </section>
         )}
+
 
         {/* Order Items */}
         <section className="rounded-xl bg-card p-4 shadow-card">
@@ -260,24 +236,26 @@ export const OrderTrackingPage = () => {
             <Receipt className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">Order Items</h3>
           </div>
-          
+
           <div className="space-y-3 mb-4">
-            {order.order_items.map(item => (
+            {(order.items || []).map(item => (
               <div key={item.id} className="flex items-center gap-3">
                 <div className="h-14 w-14 rounded-lg bg-muted flex items-center justify-center">
                   <span className="text-lg">🍽️</span>
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-sm">{item.name}</p>
+                  <p className="font-medium text-sm">{item.menuItem?.name || 'Item'}</p>
                   <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
                   {item.notes && (
                     <p className="text-xs text-muted-foreground">Note: {item.notes}</p>
                   )}
                 </div>
-                <span className="font-medium text-sm">{formatPrice(item.total_price)}</span>
+                <span className="font-medium text-sm">{formatPrice(item.totalPrice)}</span>
               </div>
             ))}
+
           </div>
+
 
           <div className="space-y-2 border-t pt-4">
             <div className="flex justify-between text-sm">
@@ -286,8 +264,9 @@ export const OrderTrackingPage = () => {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Delivery Fee</span>
-              <span>{order.delivery_fee > 0 ? formatPrice(order.delivery_fee) : 'Free'}</span>
+              <span>{order.deliveryFee > 0 ? formatPrice(order.deliveryFee) : 'Free'}</span>
             </div>
+
             {order.discount > 0 && (
               <div className="flex justify-between text-sm text-success">
                 <span>Discount</span>
@@ -329,14 +308,14 @@ export const OrderTrackingPage = () => {
         {/* Actions */}
         <div className="space-y-3">
           {order.status === 'delivered' && (
-            <Button 
+            <Button
               onClick={() => navigate('/menu')}
               className="w-full h-12"
             >
               Order Again
             </Button>
           )}
-          <Button 
+          <Button
             variant="outline"
             onClick={() => navigate('/help')}
             className="w-full h-12"

@@ -1,11 +1,11 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Package, 
-  UtensilsCrossed, 
-  Bike, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  Package,
+  UtensilsCrossed,
+  Bike,
+  BarChart3,
   LogOut,
   Menu,
   X
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -29,21 +30,26 @@ const navItems = [
 ];
 
 export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
+
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem('admin_user');
+
+  const handleLogout = async () => {
+    await logout();
     toast.success('Logged out successfully');
-    navigate('/admin/login');
+    navigate('/');
   };
+
+
 
   return (
     <div className="min-h-screen bg-background flex">
       {/* Mobile Overlay */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -60,12 +66,12 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
             <div className="flex items-center gap-3">
               <Logo size="sm" />
               <div>
-                <h1 className="font-bold text-sm">Kuku Ni Sisi</h1>
+                <h1 className="font-bold text-sm">Speedy Bites</h1>
                 <p className="text-xs text-muted-foreground">Admin Portal</p>
               </div>
             </div>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               className="lg:hidden"
               onClick={() => setSidebarOpen(false)}
@@ -96,8 +102,8 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
 
           {/* Logout */}
           <div className="p-4 border-t">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               className="w-full justify-start text-destructive hover:text-destructive"
               onClick={handleLogout}
             >
@@ -122,7 +128,7 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
               >
                 <Menu className="h-5 w-5" />
               </Button>
-              <h1 className="text-xl font-semibold">{title}</h1>
+              <h1 className="text-sm sm:text-xl font-semibold truncate max-w-[200px] sm:max-w-none">{title}</h1>
             </div>
           </div>
         </header>

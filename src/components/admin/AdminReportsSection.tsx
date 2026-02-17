@@ -1,11 +1,29 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
-import { mockRevenueData, mockDashboardStats } from '@/data/mockData';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
 
 export const AdminReportsSection = () => {
-  const totalRevenue = mockRevenueData.reduce((sum, day) => sum + day.revenue, 0);
-  const totalOrders = mockRevenueData.reduce((sum, day) => sum + day.orders, 0);
-  const avgOrderValue = Math.round(totalRevenue / totalOrders);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.getOrders().catch(() => []);
+        setOrders(data || []);
+      } catch (err) {
+        console.error('Failed to fetch orders for reports', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const totalOrders = orders.length;
+  const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+  const customerSatisfaction = 0;
 
   return (
     <div className="space-y-6">
@@ -32,52 +50,40 @@ export const AdminReportsSection = () => {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Customer Rating</p>
-            <p className="text-xl font-bold">⭐ {mockDashboardStats.customerSatisfaction}</p>
+            <p className="text-xl font-bold">⭐ {customerSatisfaction}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Revenue Chart */}
+      {/* Revenue Chart Placeholder */}
       <Card>
         <CardHeader>
           <CardTitle>Revenue by Day</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-72 flex items-end gap-3">
-            {mockRevenueData.map((day) => (
-              <div key={day.day} className="flex-1 flex flex-col items-center gap-2">
-                <div className="text-xs text-muted-foreground mb-1">
-                  <PriceDisplay price={day.revenue} className="text-xs" />
-                </div>
-                <div 
-                  className="w-full bg-primary/80 rounded-t-lg transition-all hover:bg-primary"
-                  style={{ height: `${(day.revenue / 95000) * 180}px` }}
-                />
-                <span className="text-sm font-medium">{day.day}</span>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="p-6">Loading...</div>
+          ) : orders.length === 0 ? (
+            <div className="p-6 text-muted-foreground">No revenue data available.</div>
+          ) : (
+            <div className="p-4">{/* Chart rendering could be added here */}</div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Orders Chart */}
+      {/* Orders Chart Placeholder */}
       <Card>
         <CardHeader>
           <CardTitle>Orders by Day</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-48 flex items-end gap-3">
-            {mockRevenueData.map((day) => (
-              <div key={day.day} className="flex-1 flex flex-col items-center gap-2">
-                <div className="text-sm font-medium text-muted-foreground">{day.orders}</div>
-                <div 
-                  className="w-full bg-secondary rounded-t-lg transition-all hover:bg-secondary/80"
-                  style={{ height: `${(day.orders / 52) * 120}px` }}
-                />
-                <span className="text-sm font-medium">{day.day}</span>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="p-6">Loading...</div>
+          ) : orders.length === 0 ? (
+            <div className="p-6 text-muted-foreground">No order data available.</div>
+          ) : (
+            <div className="p-4">{/* Chart rendering could be added here */}</div>
+          )}
         </CardContent>
       </Card>
 
@@ -88,24 +94,7 @@ export const AdminReportsSection = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {[
-              { name: '8-Piece Bucket', sales: 156, revenue: 187200 },
-              { name: 'Family Feast', sales: 89, revenue: 222500 },
-              { name: 'Spicy Zinger Burger', sales: 234, revenue: 128700 },
-              { name: 'Crispy Wings (6pc)', sales: 178, revenue: 80100 },
-              { name: 'Loaded Fries', sales: 145, revenue: 50750 },
-            ].map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <span className="text-lg font-bold text-muted-foreground">#{index + 1}</span>
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-sm text-muted-foreground">{item.sales} orders</p>
-                  </div>
-                </div>
-                <PriceDisplay price={item.revenue} className="font-semibold" />
-              </div>
-            ))}
+            <div className="p-6 text-muted-foreground">Top items will appear here when there is real data.</div>
           </div>
         </CardContent>
       </Card>

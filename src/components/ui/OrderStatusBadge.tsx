@@ -1,4 +1,5 @@
-import { Clock, ChefHat, Truck, CheckCircle2, XCircle, Package } from 'lucide-react';
+import { Clock, ChefHat, Truck, CheckCircle2, XCircle, Package, UserCheck, MapPin } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import type { OrderStatus } from '@/lib/api';
 
@@ -49,7 +50,28 @@ const statusConfig: Record<OrderStatus, {
     icon: XCircle,
     className: 'bg-destructive/15 text-destructive',
   },
+  assigned: {
+    label: 'Assigned',
+    icon: UserCheck,
+    className: 'bg-blue-100 text-blue-700',
+  },
+  picked_up: {
+    label: 'Picked Up',
+    icon: Truck,
+    className: 'bg-indigo-100 text-indigo-700',
+  },
+  arrived: {
+    label: 'Arrived',
+    icon: MapPin,
+    className: 'bg-emerald-100 text-emerald-700',
+  },
+  accepted: {
+    label: 'Accepted',
+    icon: CheckCircle2,
+    className: 'bg-success/15 text-success',
+  },
 };
+
 
 export const OrderStatusBadge = ({
   status,
@@ -57,7 +79,11 @@ export const OrderStatusBadge = ({
   showIcon = true,
   className
 }: OrderStatusBadgeProps) => {
-  const config = statusConfig[status];
+  const config = statusConfig[status] || {
+    label: (status || 'Unknown').replace('_', ' '),
+    icon: Clock,
+    className: 'bg-muted text-muted-foreground',
+  };
   const Icon = config.icon;
 
   const sizeClasses = {
@@ -85,6 +111,7 @@ export const OrderStatusBadge = ({
   );
 };
 
+
 // Order progress tracker
 interface OrderProgressProps {
   status: OrderStatus;
@@ -100,7 +127,7 @@ const progressSteps: { status: OrderStatus; label: string }[] = [
 
 export const OrderProgress = ({ status, className }: OrderProgressProps) => {
   const currentIndex = progressSteps.findIndex(step => step.status === status);
-  
+
   if (status === 'cancelled' || status === 'pending') {
     return <OrderStatusBadge status={status} size="lg" />;
   }
@@ -114,7 +141,7 @@ export const OrderProgress = ({ status, className }: OrderProgressProps) => {
           const StepIcon = statusConfig[step.status].icon;
 
           return (
-            <div 
+            <div
               key={step.status}
               className={cn(
                 'flex flex-col items-center gap-1 flex-1',
@@ -136,7 +163,7 @@ export const OrderProgress = ({ status, className }: OrderProgressProps) => {
         })}
       </div>
       <div className="relative h-1 bg-muted rounded-full overflow-hidden">
-        <div 
+        <div
           className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all duration-500"
           style={{ width: `${((currentIndex + 1) / progressSteps.length) * 100}%` }}
         />

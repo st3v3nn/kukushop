@@ -50,7 +50,7 @@ export const SettingsPage = () => {
         </div>
 
         <div className="mt-8 text-center">
-          <p className="text-sm text-muted-foreground">Kuku Ni Sisi</p>
+          <p className="text-sm text-muted-foreground">Speedy Bites</p>
           <p className="text-xs text-muted-foreground mt-1">Version 1.0.0</p>
         </div>
       </main>

@@ -6,17 +6,9 @@ import { EmptyOrders } from '@/components/ui/EmptyState';
 import { OrderStatusBadge } from '@/components/ui/OrderStatusBadge';
 import { formatPrice } from '@/components/ui/PriceDisplay';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/lib/api';
+import { api, type Order } from '@/lib/api';
 import { toast } from 'sonner';
 
-interface Order {
-  id: string;
-  order_number: string;
-  status: string;
-  total: number;
-  created_at: string;
-  customer_id: string;
-}
 
 export const OrdersPage = () => {
   const navigate = useNavigate();
@@ -35,26 +27,16 @@ export const OrdersPage = () => {
   const fetchOrders = async () => {
     try {
       const data = await api.getOrders();
-      
-      // Generate order numbers for display
-      const ordersWithNumbers = (data || []).map((order: any) => ({
-        id: order.id,
-        order_number: `ORD-${String(order.id).slice(-6).toUpperCase()}`,
-        status: order.status || 'pending',
-        total: Number(order.total) || 0,
-        created_at: order.created_at,
-        customer_id: order.customer_id,
-      }));
-
-      setOrders(ordersWithNumbers);
+      setOrders(data || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
-      // Don't show error toast on initial load - orders might be empty
+      toast.error('Failed to load your orders. Let\'s try refreshing!');
       setOrders([]);
     } finally {
       setIsLoading(false);
     }
   };
+
 
   if (isLoading) {
     return (
@@ -104,10 +86,11 @@ export const OrdersPage = () => {
             >
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-semibold">{order.order_number}</p>
-                  <p className="text-xs text-muted-foreground">{formatDate(order.created_at)}</p>
+                  <p className="font-semibold">{order.orderNumber}</p>
+                  <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
                 </div>
-                <OrderStatusBadge status={order.status as any} size="sm" />
+                <OrderStatusBadge status={order.status} size="sm" />
+
               </div>
               <div className="flex items-center justify-between border-t pt-3">
                 <span className="font-bold">{formatPrice(order.total)}</span>

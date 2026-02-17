@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom';
-import { 
-  User, 
-  MapPin, 
-  CreditCard, 
-  Bell, 
-  HelpCircle, 
-  LogOut, 
+import { useState, useEffect } from 'react';
+import {
+  User,
+  MapPin,
+  CreditCard,
+  Bell,
+  HelpCircle,
+  LogOut,
   ChevronRight,
   Settings,
   Heart,
@@ -19,6 +20,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
 
 const menuItems = [
   { icon: User, label: 'Edit Profile', path: '/profile/edit' },
@@ -37,7 +40,7 @@ export const ProfilePage = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   };
 
   const toggleTheme = () => {
@@ -47,7 +50,7 @@ export const ProfilePage = () => {
   return (
     <div className="min-h-screen bg-background pb-8 lg:min-h-0 lg:bg-transparent lg:pb-0">
       <Header title="Profile" />
-      
+
       <main className="px-4 py-4">
         {/* User Info */}
         <section className="mb-6 rounded-xl bg-card p-4 shadow-card">
@@ -73,7 +76,7 @@ export const ProfilePage = () => {
                 <User className="h-10 w-10 text-muted-foreground" />
               </div>
               <p className="mb-4 text-muted-foreground">Sign in to access your account</p>
-              <Button onClick={() => navigate('/login')}>
+              <Button onClick={() => navigate('/')}>
                 Sign In
               </Button>
             </div>
@@ -133,8 +136,8 @@ export const ProfilePage = () => {
               )}
             </div>
             <span className="flex-1 font-medium">Dark Mode</span>
-            <Switch 
-              checked={theme === 'dark'} 
+            <Switch
+              checked={theme === 'dark'}
               onCheckedChange={toggleTheme}
             />
           </div>
@@ -154,7 +157,7 @@ export const ProfilePage = () => {
 
         {/* App Info */}
         <div className="mt-8 text-center text-sm text-muted-foreground">
-          <p>Kuku Ni Sisi v1.0.0</p>
+          <p>Speedy Bites v1.0.0</p>
           <p className="mt-1">Made with ❤️ in Kenya</p>
         </div>
       </main>

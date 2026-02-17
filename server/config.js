@@ -70,8 +70,22 @@ class Config {
   // CORS
   // ============================================
   get cors() {
+    // In development allow common localhost ports used by Vite
+    const defaultDevOrigins = [
+      'http://localhost:8080',
+      'http://localhost:8081',
+      'http://localhost:8082',
+      'http://localhost:8083',
+      'http://127.0.0.1:8082',
+    ];
+
+    const originEnv = process.env.CORS_ORIGIN;
+    const origins = originEnv
+      ? originEnv.split(',').map(s => s.trim())
+      : (this.isDev ? defaultDevOrigins : ['http://localhost:8081']);
+
     return {
-      origin: (process.env.CORS_ORIGIN || 'http://localhost:8081').split(','),
+      origin: origins,
       credentials: this.parseBool(process.env.CORS_CREDENTIALS, true),
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
@@ -192,6 +206,8 @@ class Config {
       // Validate database
       if (!this.database.url) {
         errors.push('DATABASE_URL is required');
+      } else if (typeof this.database.url === 'string' && /REPLACE|REPLACEME|<password>/i.test(this.database.url)) {
+        errors.push('DATABASE_URL appears to contain a placeholder password; set a valid DATABASE_URL environment variable');
       }
 
       // Validate token secret in production

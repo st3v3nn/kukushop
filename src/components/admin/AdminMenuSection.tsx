@@ -11,6 +11,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { toast } from 'sonner';
 
+// Helper to get API base URL (relative for production, absolute for dev)
+const getAPIBaseURL = () => import.meta.env.VITE_API_URL || '/api';
+
+// Helper to construct image URLs - handles both dev (different ports) and production (same origin)
+const getImageURL = (path: string) => {
+  if (path.startsWith('http')) return path;
+  
+  const apiBase = getAPIBaseURL();
+  
+  // If API base is absolute (dev mode with hardcoded backend), use same origin for images
+  if (apiBase.startsWith('http')) {
+    const url = new URL(apiBase);
+    // Extract the origin (e.g., http://localhost:4000)
+    return `${url.origin}${path}`;
+  }
+  
+  // If API base is relative (production Docker same-origin), use relative path for images
+  return path;
+};
+
 interface MenuItem {
   id: string;
   name: string;
@@ -58,9 +78,10 @@ export const AdminMenuSection = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const apiBase = getAPIBaseURL();
       const [itemsRes, catsRes] = await Promise.all([
-        fetch('http://localhost:4000/api/admin/products'),
-        fetch('http://localhost:4000/api/categories'),
+        fetch(`${apiBase}/admin/products`),
+        fetch(`${apiBase}/categories`),
       ]);
 
       if (itemsRes.ok) {
@@ -144,9 +165,10 @@ export const AdminMenuSection = () => {
         fd.append('image', selectedImage);
       }
 
+      const apiBase = getAPIBaseURL();
       const url = editingItem
-        ? `http://localhost:4000/api/admin/products/${editingItem.id}`
-        : 'http://localhost:4000/api/admin/products';
+        ? `${apiBase}/admin/products/${editingItem.id}`
+        : `${apiBase}/admin/products`;
 
       const response = await fetch(url, {
         method: editingItem ? 'PUT' : 'POST',
@@ -173,7 +195,8 @@ export const AdminMenuSection = () => {
     if (!confirm('Delete this product?')) return;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/products/${id}`, {
+      const apiBase = getAPIBaseURL();
+      const response = await fetch(`${apiBase}/admin/products/${id}`, {
         method: 'DELETE',
       });
 
@@ -215,7 +238,7 @@ export const AdminMenuSection = () => {
               <div className="aspect-video bg-muted rounded-lg mb-3 overflow-hidden">
                 {item.image_url ? (
                   <img 
-                    src={item.image_url.startsWith('http') ? item.image_url : `http://localhost:4000${item.image_url}`}
+                    src={getImageURL(item.image_url)}
                     alt={item.name}
                     className="h-full w-full object-cover"
                     onError={(e) => {
@@ -278,7 +301,7 @@ export const AdminMenuSection = () => {
                 {imagePreview ? (
                   <>
                     <img 
-                      src={imagePreview.startsWith('http') ? imagePreview : `http://localhost:4000${imagePreview}`}
+                      src={getImageURL(imagePreview)}
                       alt="Preview" 
                       className="h-full w-full object-cover"
                       onError={(e) => {

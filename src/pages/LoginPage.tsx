@@ -7,12 +7,14 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { Logo } from '@/components/ui/Logo';
+
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, signUp, isAuthenticated, isLoading: authLoading } = useAuth();
-  
+  const { login, signUp, isAuthenticated, user, isLoading: authLoading } = useAuth();
+
   const [isSignUp, setIsSignUp] = useState(location.pathname === '/signup');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -25,12 +27,19 @@ export const LoginPage = () => {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated (role-based)
   useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      navigate('/', { replace: true });
+    if (isAuthenticated && !authLoading && user) {
+      if (user.role === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
+      } else if (user.role === 'rider') {
+        navigate('/rider/dashboard', { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
     }
-  }, [isAuthenticated, authLoading, navigate]);
+  }, [isAuthenticated, authLoading, user, navigate]);
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -42,7 +51,7 @@ export const LoginPage = () => {
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    
+
     if (isSignUp && !formData.name.trim()) {
       newErrors.name = 'Name is required';
     }
@@ -69,7 +78,7 @@ export const LoginPage = () => {
     if (!validate()) return;
 
     setIsLoading(true);
-    
+
     try {
       if (isSignUp) {
         const { error } = await signUp(formData.email, formData.password, formData.name);
@@ -85,7 +94,7 @@ export const LoginPage = () => {
         toast.success('Account created successfully!');
         navigate('/onboarding', { replace: true });
       } else {
-        const { error } = await login(formData.email, formData.password);
+        const { error, user: loggedUser } = await login(formData.email, formData.password);
         if (error) {
           if (error.message.includes('Invalid login credentials')) {
             toast.error('Invalid email or password');
@@ -95,9 +104,20 @@ export const LoginPage = () => {
           setIsLoading(false);
           return;
         }
-        toast.success('Welcome back!');
-        navigate('/splash', { replace: true });
+
+        // Role-based redirect
+        if (loggedUser?.role === 'admin') {
+          toast.success('Welcome back, Admin!');
+          navigate('/admin/dashboard', { replace: true });
+        } else if (loggedUser?.role === 'rider') {
+          toast.success('Welcome back, Rider!');
+          navigate('/rider/dashboard', { replace: true });
+        } else {
+          toast.success('Welcome back!');
+          navigate('/', { replace: true });
+        }
       }
+
     } catch (err) {
       toast.error('An unexpected error occurred');
     } finally {
@@ -129,10 +149,11 @@ export const LoginPage = () => {
       <div className="flex-1 px-6 py-4">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary">
-            <span className="text-4xl">🍗</span>
+          <div className="mb-4">
+            <Logo size="md" />
           </div>
           <h1 className="text-2xl font-bold">
+
             {isSignUp ? 'Create Account' : 'Welcome Back!'}
           </h1>
           <p className="mt-1 text-muted-foreground">

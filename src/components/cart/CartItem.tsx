@@ -1,4 +1,5 @@
 import { Trash2 } from 'lucide-react';
+import { getImageURL } from '@/lib/api';
 import { QuantitySelector } from '@/components/ui/QuantitySelector';
 import { formatPrice } from '@/components/ui/PriceDisplay';
 import { useCart } from '@/contexts/CartContext';
@@ -20,7 +21,7 @@ export const CartItemCard = ({ item, className }: CartItemProps) => {
     )}>
       <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg">
         <img 
-          src={item.menuItem.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80'} 
+          src={getImageURL(item.menuItem.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80')} 
           alt={item.menuItem.name}
           className="h-full w-full object-cover"
           loading="lazy"

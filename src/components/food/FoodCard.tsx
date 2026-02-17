@@ -1,9 +1,13 @@
 import { Plus, Star, Heart } from 'lucide-react';
+import { getImageURL, api } from '@/lib/api';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { useCart } from '@/contexts/CartContext';
+import { useAuth } from '@/contexts/AuthContext';
 import type { MenuItem } from '@/lib/api';
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 
 interface FoodCardProps {
   item: MenuItem;
@@ -13,6 +17,20 @@ interface FoodCardProps {
 
 export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps) => {
   const { addItem } = useCart();
+  const { user, isAuthenticated } = useAuth();
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+
+  // Fetch favorites status on mount
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      api.getFavorites()
+        .then(favorites => {
+          setIsFavorite(favorites.includes(item.id));
+        })
+        .catch(err => console.error('Failed to fetch favorites:', err));
+    }
+  }, [isAuthenticated, user, item.id]);
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -20,9 +38,43 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
     addItem(item, 1);
   };
 
+  const handleToggleFavorite = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isAuthenticated) {
+      toast.error('Please sign in to save favorites');
+      return;
+    }
+
+    if (isTogglingFavorite) return;
+
+    // Optimistic UI update
+    const previousState = isFavorite;
+    setIsFavorite(!isFavorite);
+    setIsTogglingFavorite(true);
+
+    try {
+      if (previousState) {
+        await api.removeFavorite(item.id);
+        toast.success('Removed from favorites');
+      } else {
+        await api.addFavorite(item.id);
+        toast.success('Added to favorites');
+      }
+    } catch (error) {
+      // Revert on error
+      setIsFavorite(previousState);
+      toast.error('Failed to update favorites');
+      console.error('Favorite toggle error:', error);
+    } finally {
+      setIsTogglingFavorite(false);
+    }
+  };
+
   if (variant === 'horizontal') {
     return (
-      <Link 
+      <Link
         to={`/menu/${item.id}`}
         className={cn(
           'food-card group flex gap-4 rounded-2xl bg-card p-4 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1',
@@ -31,19 +83,32 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
         )}
       >
         <div className="relative h-28 w-28 flex-shrink-0 overflow-hidden rounded-xl ring-1 ring-border/50">
-          <img 
-            src={item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80'} 
+          <img
+            src={getImageURL(item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80')}
             alt={item.name}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
             loading="lazy"
           />
+          {/* Favorite Button */}
+          <button
+            onClick={handleToggleFavorite}
+            className="absolute top-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-background/90 backdrop-blur-sm shadow-md transition-all hover:scale-110 active:scale-95"
+            aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Heart
+              className={cn(
+                'h-4 w-4 transition-all',
+                isFavorite ? 'fill-red-500 text-red-500' : 'text-muted-foreground'
+              )}
+            />
+          </button>
           {!item.isAvailable && !item.is_available && (
             <div className="absolute inset-0 flex items-center justify-center bg-background/85 backdrop-blur-sm">
               <span className="text-xs font-semibold text-muted-foreground">Sold Out</span>
             </div>
           )}
           {item.isFeatured && item.is_featured && (
-            <div className="absolute top-2 right-2 bg-accent text-accent-foreground px-2 py-1 rounded-full text-xs font-semibold">
+            <div className="absolute top-2 left-2 bg-accent text-accent-foreground px-2 py-1 rounded-full text-xs font-semibold">
               Featured
             </div>
           )}
@@ -81,7 +146,7 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
   }
 
   return (
-    <Link 
+    <Link
       to={`/menu/${item.id}`}
       className={cn(
         'food-card group block rounded-2xl bg-card overflow-hidden shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1',
@@ -90,12 +155,25 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
       )}
     >
       <div className="relative aspect-square overflow-hidden bg-secondary ring-1 ring-border/20 mb-3">
-        <img 
-          src={item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80'} 
+        <img
+          src={getImageURL(item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80')}
           alt={item.name}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           loading="lazy"
         />
+        {/* Favorite Button */}
+        <button
+          onClick={handleToggleFavorite}
+          className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-background/90 backdrop-blur-sm shadow-md transition-all hover:scale-110 active:scale-95"
+          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          <Heart
+            className={cn(
+              'h-5 w-5 transition-all',
+              isFavorite ? 'fill-red-500 text-red-500' : 'text-muted-foreground'
+            )}
+          />
+        </button>
         {item.originalPrice && item.originalPrice > item.price && (
           <span className="absolute left-3 top-3 rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground shadow-lg">
             SALE

@@ -4,6 +4,7 @@ import { ArrowLeft, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FoodCard } from '@/components/food/FoodCard';
 import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface FavoriteItem {
@@ -34,9 +35,15 @@ export const FavoritesPage = () => {
 
   const fetchFavorites = async () => {
     try {
-      // For now, return empty favorites list
-      // In a full implementation, you would fetch from the API
-      setFavorites([]);
+      const ids = await api.getFavorites();
+      if (!ids || ids.length === 0) {
+        setFavorites([]);
+        return;
+      }
+      // Fetch menu items and filter by favorite ids
+      const all = await api.getMenuItems();
+      const favItems = all.filter((i) => ids.includes(i.id));
+      setFavorites(favItems as any);
     } catch (error) {
       console.error('Error fetching favorites:', error);
       toast.error('Failed to load favorites');
@@ -89,7 +96,18 @@ export const FavoritesPage = () => {
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {favorites.map((item) => (
-              <FoodCard key={item.id} item={item} />
+              <FoodCard key={item.id} item={{
+                id: item.id,
+                name: item.name,
+                description: item.description,
+                price: item.price,
+                image: item.image_url,
+                category: item.category_id || '',
+                categoryId: item.category_id || '',
+                isAvailable: item.is_available,
+                isFeatured: item.is_featured,
+                preparationTime: item.preparation_time,
+              }} />
             ))}
           </div>
         )}

@@ -4,18 +4,23 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: {
-      overlay: false,
+export default defineConfig(({ mode }) => {
+  const devPort = parseInt(process.env.PORT || process.env.VITE_DEV_PORT || '8082', 10);
+  return {
+    server: {
+      host: '::',
+      port: devPort,
+      hmr: {
+        overlay: false,
+        // ensure the HMR client connects to the same port the server is listening on
+        clientPort: devPort,
+      },
     },
-  },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+    plugins: [react(), mode === 'development' && componentTagger()].filter(Boolean),
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
     },
-  },
-}));
+  };
+});

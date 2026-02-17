@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { getImageURL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -116,7 +117,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               {imagePreview ? (
                 <div className="relative inline-block">
                   <img 
-                    src={imagePreview} 
+                    src={getImageURL(imagePreview)} 
                     alt="Preview" 
                     className="h-48 w-48 object-cover rounded-lg"
                   />

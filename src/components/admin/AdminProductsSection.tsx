@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getImageURL, apiFetch } from '@/lib/api';
 import { Trash2, Edit2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +14,9 @@ interface Product {
   category_id: string;
   image_url: string;
   is_featured: boolean;
+  isFeatured?: boolean;
   is_available: boolean;
+  isAvailable?: boolean;
   preparation_time: number;
 }
 
@@ -32,9 +35,7 @@ export const AdminProductsSection = () => {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:4000/api/admin/products');
-      if (!response.ok) throw new Error('Failed to fetch products');
-      const data = await response.json();
+      const data = await apiFetch<Product[]>('/admin/products');
       setProducts(data);
     } catch (error) {
       toast.error('Failed to load products');
@@ -46,9 +47,7 @@ export const AdminProductsSection = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch('http://localhost:4000/api/admin/categories');
-      if (!response.ok) throw new Error('Failed to fetch categories');
-      const data = await response.json();
+      const data = await apiFetch<any[]>('/admin/categories');
       setCategories(data);
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -57,21 +56,13 @@ export const AdminProductsSection = () => {
 
   const handleSubmit = async (formData: FormData) => {
     try {
-      const url = editingProduct
-        ? `http://localhost:4000/api/admin/products/${editingProduct.id}`
-        : 'http://localhost:4000/api/admin/products';
-
       const method = editingProduct ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
+      await apiFetch(editingProduct
+        ? `/admin/products/${editingProduct.id}`
+        : '/admin/products', {
         method,
         body: formData,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to save product');
-      }
 
       toast.success(editingProduct ? 'Product updated!' : 'Product created!');
       setShowForm(false);
@@ -87,13 +78,9 @@ export const AdminProductsSection = () => {
     if (!confirm(`Are you sure you want to delete "${productName}"?`)) return;
 
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/products/${productId}`, {
+      await apiFetch(`/admin/products/${productId}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete product');
-      }
 
       toast.success('Product deleted');
       fetchProducts();
@@ -150,7 +137,7 @@ export const AdminProductsSection = () => {
             <Card key={product.id} className="overflow-hidden hover:shadow-lg transition-shadow">
               {product.image_url && (
                 <img
-                  src={product.image_url}
+                  src={getImageURL(product.image_url)}
                   alt={product.name}
                   className="w-full h-48 object-cover"
                 />

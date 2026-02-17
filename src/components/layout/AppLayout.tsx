@@ -6,15 +6,15 @@ export const AppLayout = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Mobile Layout */}
-      <div className="lg:hidden">
-        <div className="pb-20 md:pb-0">
+      <div className="xl:hidden">
+        <div className="pb-20 xl:pb-0">
           <Outlet />
           <BottomNav />
         </div>
       </div>
 
       {/* Desktop Layout */}
-      <div className="hidden lg:block">
+      <div className="hidden xl:block">
         <DesktopNav>
           <Outlet />
         </DesktopNav>
