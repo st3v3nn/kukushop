@@ -15,6 +15,11 @@ const statusConfig: Record<OrderStatus, {
   icon: typeof Clock;
   className: string;
 }> = {
+  created: {
+    label: 'Pending Payment',
+    icon: Clock,
+    className: 'bg-orange-100 text-orange-700',
+  },
   pending: {
     label: 'Pending',
     icon: Clock,
@@ -44,6 +49,11 @@ const statusConfig: Record<OrderStatus, {
     label: 'Delivered',
     icon: CheckCircle2,
     className: 'bg-success/15 text-success',
+  },
+  completed: {
+    label: 'Completed',
+    icon: CheckCircle2,
+    className: 'bg-emerald-100 text-emerald-700',
   },
   cancelled: {
     label: 'Cancelled',
@@ -128,7 +138,7 @@ const progressSteps: { status: OrderStatus; label: string }[] = [
 export const OrderProgress = ({ status, className }: OrderProgressProps) => {
   const currentIndex = progressSteps.findIndex(step => step.status === status);
 
-  if (status === 'cancelled' || status === 'pending') {
+  if (status === 'cancelled' || status === 'pending' || status === 'created') {
     return <OrderStatusBadge status={status} size="lg" />;
   }
 

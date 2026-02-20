@@ -10,7 +10,8 @@ import {
   Star,
   DollarSign,
   Bike,
-  Home
+  Home,
+  Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +23,8 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { DeliveryMap } from '@/components/map/DeliveryMap';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 import { api, API_BASE_URL } from '@/lib/api';
 
@@ -38,6 +41,8 @@ interface ActiveDelivery {
     landmark?: string;
     lat?: number;
     lng?: number;
+    latitude?: number;
+    longitude?: number;
   };
   items: { name: string; quantity: number }[];
   total: number;
@@ -49,6 +54,7 @@ interface ActiveDelivery {
 export const RiderDashboardPage = () => {
   const navigate = useNavigate();
   const { logout, user, isAuthenticated } = useAuth();
+  const { unreadCount } = useNotifications();
   const [activeTab, setActiveTab] = useState('available');
   const [availableOrders, setAvailableOrders] = useState<any[]>([]);
   const [activeDelivery, setActiveDelivery] = useState<ActiveDelivery | null>(null);
@@ -279,6 +285,39 @@ export const RiderDashboardPage = () => {
     toast.success(`You are now ${newStatus}`);
   };
 
+  // Tracking: watch rider position and send to backend
+  useEffect(() => {
+    if (!('geolocation' in navigator) || riderStatus === 'offline' || !activeDelivery) {
+      return;
+    }
+
+    let lastUpload = 0;
+    const UPLOAD_INTERVAL = 10000; // 10 seconds
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const newLoc = { lat: latitude, lng: longitude, label: 'Your Location' };
+        setRiderLocation(newLoc);
+
+        // Periodically send to backend
+        const now = Date.now();
+        if (now - lastUpload > UPLOAD_INTERVAL) {
+          api.updateRiderLocation(latitude, longitude).catch(err => {
+            console.warn('Rider location update failed:', err);
+          });
+          lastUpload = now;
+        }
+      },
+      (error) => {
+        console.error('WatchPosition error:', error);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [riderStatus, !!activeDelivery]);
+
   const statusSteps: DeliveryStatus[] = ['accepted', 'picked_up', 'on_the_way', 'arrived', 'delivered'];
   const currentStepIndex = activeDelivery ? statusSteps.indexOf(activeDelivery.status) : -1;
 
@@ -286,7 +325,11 @@ export const RiderDashboardPage = () => {
 
 
   const customerLocation = activeDelivery
-    ? { lat: -1.2750, lng: 36.8150, label: activeDelivery.address.street }
+    ? {
+      lat: Number(activeDelivery.address.latitude || activeDelivery.address.lat) || -1.2750,
+      lng: Number(activeDelivery.address.longitude || activeDelivery.address.lng) || 36.8150,
+      label: activeDelivery.address.street
+    }
     : undefined;
 
   return (
@@ -318,6 +361,14 @@ export const RiderDashboardPage = () => {
 
             <Button variant="outline" size="sm" onClick={toggleStatus} className="h-8 text-[10px] sm:text-xs">
               {riderStatus === 'online' ? 'Go Offline' : 'Go Online'}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/profile/notifications')} className="h-8 w-8 relative">
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Go to Home" className="h-8 w-8">
               <Home className="h-4 w-4" />
@@ -426,9 +477,12 @@ export const RiderDashboardPage = () => {
           {activeDelivery && (
             <div className="space-y-4">
               <Card className="overflow-hidden">
-                <div className="h-56 bg-muted flex items-center justify-center text-muted-foreground">
-                  <Navigation className="h-8 w-8 mr-2" />
-                  <span>Delivery in progress</span>
+                <div className="h-56">
+                  <DeliveryMap
+                    riderLocation={riderLocation}
+                    customerLocation={customerLocation}
+                    className="h-full"
+                  />
                 </div>
                 <div className="p-3 flex justify-between items-center border-t">
                   <div className="flex items-center gap-2 text-sm">

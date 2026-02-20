@@ -8,7 +8,18 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import type { Rider } from '@/data/mockData';
+
+interface Rider {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  status: 'available' | 'busy' | 'offline';
+  currentOrder?: string;
+  completedToday: number;
+  rating: number;
+  avatar?: string;
+}
 
 const statusColors: Record<Rider['status'], string> = {
   available: 'bg-green-100 text-green-700',
@@ -206,7 +217,7 @@ export const AdminRidersSection = () => {
           </Card>
         ))}
       </div>
-      
+
       {/* Password dialog shown after creating a rider */}
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
         <DialogContent>

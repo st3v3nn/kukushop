@@ -1,16 +1,30 @@
 version: '3.8'
 services:
-  app:
+  frontend:
     build: .
     restart: unless-stopped
-    environment:
-      - VITE_SUPABASE_URL
-      - VITE_SUPABASE_PUBLISHABLE_KEY
-      - VITE_API_URL
     ports:
       - "80:80"
     depends_on:
+      - server
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://speedy_admin:secure_password_here@db:5432/speedy_bites
+      - TOKEN_SECRET=your_secret_key_at_least_32_chars_long
+      - MPESA_CONSUMER_KEY
+      - MPESA_CONSUMER_SECRET
+      - MPESA_SHORTCODE
+      - MPESA_PASSKEY
+      - MPESA_CALLBACK_BASE
+    depends_on:
       - db
+    ports:
+      - "4000:4000"
 
   db:
     image: postgres:15
@@ -21,8 +35,7 @@ services:
       POSTGRES_DB: speedy_bites
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+
 
 volumes:
   db_data:

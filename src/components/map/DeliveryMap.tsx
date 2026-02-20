@@ -74,7 +74,7 @@ const FitBounds = ({ locations }: { locations: Location[] }) => {
 const NAIROBI_CENTER: Location = { lat: -1.2921, lng: 36.8219 };
 
 export const DeliveryMap = ({
-  restaurantLocation = { lat: -1.2864, lng: 36.8172, label: 'Speedy Bites Restaurant' },
+  restaurantLocation = { lat: -1.2864, lng: 36.8172, label: 'Kuku ni Sisi Restaurant' },
   customerLocation,
   riderLocation,
   showRoute = true,

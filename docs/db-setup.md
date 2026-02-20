@@ -1,4 +1,4 @@
-# Postgres Database Setup for Speedy Bites (VPS / Production)
+# Postgres Database Setup for Kuku ni Sisi (VPS / Production)
 
 This document explains how to set up a secure PostgreSQL database on an Ubuntu VPS and connect the frontend (containerized) app to it. The app expects a Supabase-style Postgres schema; use the SQL migrations in `supabase/migrations/` to create tables.
 

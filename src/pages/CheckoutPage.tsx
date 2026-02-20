@@ -12,7 +12,7 @@ import { formatPrice } from '@/components/ui/PriceDisplay';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { api, CreateOrderData } from '@/lib/api';
+import { api, apiFetch, CreateOrderData } from '@/lib/api';
 
 
 type PaymentMethod = 'mpesa' | 'cash';
@@ -23,6 +23,7 @@ export const CheckoutPage = () => {
   const { user } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mpesa');
   const [address, setAddress] = useState({
     street: '',
@@ -32,6 +33,7 @@ export const CheckoutPage = () => {
     lng: undefined as number | undefined,
   });
   const [isLocating, setIsLocating] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
   const [notes, setNotes] = useState('');
 
   const handleUseMyLocation = () => {
@@ -61,6 +63,38 @@ export const CheckoutPage = () => {
     );
   };
 
+  const pollOrderPaymentStatus = async (orderId: string) => {
+    const maxAttempts = 24; // 2 minutes with 5s interval
+    let attempts = 0;
+
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        setIsPaymentProcessing(false);
+        toast.error('Payment confirmation timed out. Please check your MPesa and order history.');
+        return;
+      }
+
+      try {
+        const order = await api.getOrder(orderId);
+        if (order.status === 'pending' || order.paymentStatus === 'paid') {
+          setIsPaymentProcessing(false);
+          toast.success('Payment confirmed! Order placed.');
+          clearCart();
+          navigate(`/order-confirmation/${orderId}`);
+          return;
+        }
+
+        attempts++;
+        setTimeout(poll, 5000);
+      } catch (err) {
+        console.error('Polling error:', err);
+        attempts++;
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  };
 
   const handlePlaceOrder = async () => {
     // Validation
@@ -80,12 +114,16 @@ export const CheckoutPage = () => {
       return;
     }
 
+    if (paymentMethod === 'mpesa' && !phoneNumber.trim()) {
+      toast.error('Please enter a phone number for M-Pesa payment');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       // Prepare order payload with proper structure
       const orderPayload: CreateOrderData = {
-
         customer_id: user.id,
         subtotal: cart.subtotal,
         delivery_fee: cart.deliveryFee,
@@ -98,9 +136,9 @@ export const CheckoutPage = () => {
           lat: address.lat,
           lng: address.lng,
         },
-
         notes: notes.trim() || null,
         payment_method: paymentMethod,
+        phone: phoneNumber.trim(),
         items: cart.items.map(item => ({
           menu_item_id: item.menuItem.id,
           name: item.menuItem.name,
@@ -108,24 +146,50 @@ export const CheckoutPage = () => {
           unit_price: item.menuItem.price,
           total_price: item.totalPrice,
           notes: Array.isArray(item.options?.notes) ? item.options?.notes.join(', ') : (item.options?.notes as string) || null,
-
         })),
         promo_code: cart.promoCode || null,
       };
 
-
       // Call API to create order
       const response = await api.createOrder(orderPayload);
 
-      if (response.success) {
-        toast.success('Order placed successfully!');
-        clearCart();
+      if (response.success && response.orderId) {
+        if (paymentMethod === 'mpesa') {
+          setIsPaymentProcessing(true);
+          try {
+            // Initiate STK Push
+            const stkResponse = await apiFetch<any>('/mpesa/stk', {
+              method: 'POST',
+              body: JSON.stringify({
+                orderId: response.orderId,
+                amount: cart.total,
+                phone: phoneNumber.trim(),
+                accountRef: `Order#${response.orderId.slice(0, 8)}`,
+                description: 'Order Payment'
+              })
+            });
 
-        // Navigate to order confirmation page
-        setTimeout(() => {
-          navigate(`/order-confirmation/${response.orderId}`);
-        }, 1500);
-
+            if (stkResponse.success) {
+              toast.info('STK Push sent to your phone. Please enter pin to complete.');
+              pollOrderPaymentStatus(response.orderId);
+            } else {
+              setIsPaymentProcessing(false);
+              toast.error('Failed to initiate MPesa STK push. You can try again from order history.');
+              navigate(`/order-confirmation/${response.orderId}`);
+            }
+          } catch (stkErr: any) {
+            console.error('STK Error:', stkErr);
+            setIsPaymentProcessing(false);
+            toast.error(stkErr.message || 'Failed to initiate MPesa payment. Please check your order history.');
+            navigate(`/order-confirmation/${response.orderId}`);
+          }
+        } else {
+          toast.success('Order placed successfully!');
+          clearCart();
+          setTimeout(() => {
+            navigate(`/order-confirmation/${response.orderId}`);
+          }, 1500);
+        }
       } else {
         toast.error(response.error || 'Failed to place order');
       }
@@ -195,6 +259,17 @@ export const CheckoutPage = () => {
                 placeholder="Near KICC, opposite bus stop"
                 value={address.landmark}
                 onChange={(e) => setAddress(prev => ({ ...prev, landmark: e.target.value }))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="phone">Phone Number (for MPesa)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="0712345678"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
                 className="mt-1"
               />
             </div>
@@ -313,13 +388,33 @@ export const CheckoutPage = () => {
       <div className="fixed bottom-20 left-0 right-0 z-40 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-6 md:bottom-0 safe-bottom">
         <Button
           onClick={handlePlaceOrder}
-          disabled={isLoading || cart.items.length === 0}
+          disabled={isLoading || isPaymentProcessing || cart.items.length === 0}
           className="w-full h-14 text-base font-semibold"
           size="lg"
         >
-          {isLoading ? 'Placing Order...' : `Place Order • ${formatPrice(cart.total)}`}
+          {isLoading && !isPaymentProcessing ? (
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          ) : null}
+          {isPaymentProcessing ? 'Processing Payment...' : isLoading ? 'Placing Order...' : `Place Order • ${formatPrice(cart.total)}`}
         </Button>
       </div>
+      {isPaymentProcessing && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 text-center max-w-xs px-6">
+            <div className="relative">
+              <div className="h-16 w-16 rounded-full border-4 border-primary/20 animate-pulse" />
+              <Loader2 className="absolute inset-0 h-16 w-16 text-primary animate-spin" />
+            </div>
+            <h3 className="text-xl font-bold">Waiting for Payment</h3>
+            <p className="text-muted-foreground">
+              Please check your phone for the M-Pesa STK push and enter your PIN to complete the order.
+            </p>
+            <div className="mt-2 text-sm font-medium text-primary animate-pulse">
+              Do not close this page
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

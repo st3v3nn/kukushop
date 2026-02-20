@@ -380,6 +380,17 @@ export const api = {
   getPromos: () => apiFetch<Promo[]>('/promos'),
   validatePromo: (code: string) => apiFetch<Promo>(`/promos/validate/${code}`),
 
+  // Notifications
+  getNotifications: () => apiFetch<any[]>('/notifications'),
+  markNotificationRead: (id: string) => apiFetch<void>(`/notifications/${id}/read`, { method: 'PUT' }),
+  markAllNotificationsRead: () => apiFetch<void>('/notifications/read-all', { method: 'PUT' }),
+  deleteNotification: (id: string) => apiFetch<void>(`/notifications/${id}`, { method: 'DELETE' }),
+  clearNotifications: () => apiFetch<void>('/notifications', { method: 'DELETE' }),
+
+  // Admin: Broadcast a notification to users/riders/all
+  broadcastNotification: (payload: { targetRole?: string; title: string; message: string; data?: any }) =>
+    apiFetch<void>('/admin/notifications/broadcast', { method: 'POST', body: JSON.stringify(payload) }),
+
   // Auth helpers
   setAuthToken,
   clearAuth,
@@ -485,6 +496,7 @@ export interface CreateOrderData {
     notes?: string | null;
   }[];
   payment_method: 'cash' | 'mpesa';
+  phone?: string;
   notes?: string | null;
   promo_code?: string | null;
 }
@@ -502,6 +514,7 @@ export interface Order {
   address: Address;
   paymentMethod: string;
   paymentStatus: 'pending' | 'paid' | 'failed';
+  phone?: string;
   createdAt: string;
   estimatedDelivery?: string;
   driver?: {
@@ -510,7 +523,7 @@ export interface Order {
   };
 }
 
-export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready_for_pickup' | 'on_the_way' | 'delivered' | 'cancelled' | 'assigned' | 'picked_up' | 'arrived' | 'accepted';
+export type OrderStatus = 'created' | 'pending' | 'confirmed' | 'preparing' | 'ready_for_pickup' | 'on_the_way' | 'delivered' | 'completed' | 'cancelled' | 'assigned' | 'picked_up' | 'arrived' | 'accepted';
 
 
 export interface Promo {

@@ -8,8 +8,28 @@ import { PromoCarousel } from '@/components/promo/PromoBanner';
 import { StickyCartButton } from '@/components/cart/StickyCartButton';
 import { api } from '@/lib/api';
 import type { Category, MenuItem } from '@/lib/api';
-import { promoBanners } from '@/data/mockData';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+
+const promoBanners = [
+  {
+    title: 'Restaurant Specials!',
+    subtitle: 'Try our Choma Special & Pilau',
+    image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&q=80',
+    link: '/menu?category=d40d8611-f118-41c5-9329-17a8b5a8e21c',
+  },
+  {
+    title: 'Fresh from the Butchery',
+    subtitle: 'Quality meat cuts at great prices',
+    image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&q=80',
+    link: '/menu?category=4bd8b74c-db3e-481b-9523-32caec7349b9',
+  },
+  {
+    title: 'Fresh Groceries',
+    subtitle: 'Farm-fresh produce delivered to you',
+    image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&q=80',
+    link: '/menu?category=83b0fc2c-77b1-42ef-84f8-9ecdb522f7c6',
+  },
+];
 
 export const HomePage = () => {
   const [categories, setCategories] = useState<Category[]>([]);

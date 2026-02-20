@@ -75,7 +75,7 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
   if (variant === 'horizontal') {
     return (
       <Link
-        to={`/menu/${item.id}`}
+        to={`/meal/${item.id}`}
         className={cn(
           'food-card group flex gap-4 rounded-2xl bg-card p-4 shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1',
           !item.is_available && 'opacity-60',
@@ -147,7 +147,7 @@ export const FoodCard = ({ item, variant = 'default', className }: FoodCardProps
 
   return (
     <Link
-      to={`/menu/${item.id}`}
+      to={`/meal/${item.id}`}
       className={cn(
         'food-card group block rounded-2xl bg-card overflow-hidden shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1',
         !(item.isAvailable ?? item.is_available) && 'opacity-60',

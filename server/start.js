@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Speedy Bites API Server
+ * Kuku ni Sisi API Server
  * Production-ready startup with health checks and validation
  */
 

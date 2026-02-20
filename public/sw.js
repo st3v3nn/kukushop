@@ -1,9 +1,10 @@
-const CACHE_NAME = 'speedy-bites-v2';
+const CACHE_NAME = 'speedy-bites-v3';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
     '/manifest.json',
     '/favicon.ico',
+    '/favicon-32x32.png',
 ];
 
 // Install: cache core assets
@@ -26,7 +27,7 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch: bypass cache for API and non-http protocols
+// Fetch: bypass cache for API, JS/CSS bundles, and non-http protocols
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
@@ -40,26 +41,30 @@ self.addEventListener('fetch', (event) => {
     // API requests: network only (don't cache API data)
     if (url.pathname.startsWith('/api/')) return;
 
-    // Static assets: Stale-While-Revalidate
+    // Never cache JS or CSS bundles — they change on every build via content hashing
+    if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) return;
+
+    // Static assets (HTML, images, fonts): Network-first with cache fallback
     event.respondWith(
-        caches.match(event.request).then((cached) => {
-            const fetched = fetch(event.request).then((response) => {
-                // Only cache valid successful responses from our origin
+        fetch(event.request)
+            .then((response) => {
+                // Cache valid successful responses from our origin
                 if (response && response.status === 200 && url.origin === self.location.origin) {
                     const clone = response.clone();
                     caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
                 }
                 return response;
-            }).catch(() => cached);
-
-            return cached || fetched;
-        })
+            })
+            .catch(() => {
+                // Network failed — try cache
+                return caches.match(event.request);
+            })
     );
 });
 
 // Push notification handler
 self.addEventListener('push', (event) => {
-    let data = { title: 'Speedy Bites', body: 'New update received!', icon: '/icon-192x192.png' };
+    let data = { title: 'Kuku ni Sisi', body: 'New update received!', icon: '/icon-192x192.png' };
 
     if (event.data) {
         try {

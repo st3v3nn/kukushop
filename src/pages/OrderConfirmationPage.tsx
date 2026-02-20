@@ -54,7 +54,7 @@ export const OrderConfirmationPage = () => {
                     </Card>
 
                     <Button
-                        onClick={() => navigate(`/orders/${id}`)}
+                        onClick={() => navigate(`/order/${id}`)}
                         className="w-full h-14 text-base font-semibold group"
                         size="lg"
                         disabled={!id}

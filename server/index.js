@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const config = require('./config');
 const { Logger, errorHandler, requestLogger } = require('./logger');
 const { upload, generateFileName, calculateChecksum, handleUploadError } = require('./uploadMiddleware');
@@ -12,6 +13,64 @@ const DatabaseManager = require('./database');
 const { checkDatabaseHealth, databaseErrorHandler, withRetry, CircuitBreaker } = require('./resilience');
 const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// ============================================
+// EMAIL TEMPLATES (Branded Kuku ni Sisi)
+// ============================================
+const getEmailHeader = (title) => `
+  <div style="background-color: #f97316; padding: 40px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 28px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">🍗 Kuku ni Sisi</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">${title}</p>
+  </div>
+`;
+
+const getEmailFooter = () => `
+  <div style="padding: 30px 20px; text-align: center; color: #64748b; font-size: 14px; border-top: 1px solid #e2e8f0; background-color: #f8fafc; border-radius: 0 0 12px 12px;">
+    <p style="margin: 0 0 10px 0; font-weight: bold; color: #1e293b;">Kuku ni Sisi Cafe, Butchery & Groceries</p>
+    <p style="margin: 0;">Made with ❤️ by BuildbySteve.co.ke</p>
+    <div style="margin-top: 20px;">
+      <a href="https://kukunisisi.co.ke" style="color: #f97316; text-decoration: none; margin: 0 10px;">Visit Website</a>
+      <a href="https://kukunisisi.co.ke/menu" style="color: #f97316; text-decoration: none; margin: 0 10px;">Our Menu</a>
+    </div>
+  </div>
+`;
+
+const getWelcomeTemplate = (name) => `
+  <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
+    ${getEmailHeader('Welcome to the Family!')}
+    <div style="padding: 40px 30px; line-height: 1.6; color: #1e293b;">
+      <h2 style="color: #0f172a; margin-top: 0;">Hi ${name},</h2>
+      <p style="font-size: 16px;">We're absolutely thrilled to have you join **Kuku ni Sisi**! Your journey to delicious meals and farm-fresh produce starts here.</p>
+      <p style="font-size: 16px;">Whether you're craving a Cafe special, quality cuts from our Butchery, or fresh Groceries, we've got you covered.</p>
+      
+      <div style="margin-top: 35px; text-align: center;">
+        <a href="https://kukunisisi.co.ke/menu" style="background-color: #f97316; color: white; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(249, 115, 22, 0.2);">Browse Our Menu</a>
+      </div>
+      
+      <p style="margin-top: 35px; font-size: 15px; border-left: 4px solid #f97316; padding-left: 15px; color: #64748b; font-style: italic;">
+        Pro-tip: Try our Choma Special and Pilau — they're customer favorites for a reason!
+      </p>
+    </div>
+    ${getEmailFooter()}
+  </div>
+`;
+
+const getPasswordResetTemplate = (name, resetCode) => `
+  <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
+    ${getEmailHeader('Reset Your Password')}
+    <div style="padding: 40px 30px; line-height: 1.6; color: #1e293b;">
+      <h2 style="color: #0f172a; margin-top: 0;">Hello ${name},</h2>
+      <p style="font-size: 16px;">We received a request to reset your password. Use the verification code below to complete the process:</p>
+      
+      <div style="background-color: #fff7ed; border: 2px dashed #fed7aa; padding: 30px; text-align: center; border-radius: 12px; margin: 30px 0;">
+        <h1 style="font-size: 38px; letter-spacing: 8px; color: #c2410c; margin: 0; font-family: 'Courier New', Courier, monospace; font-weight: bold;">${resetCode}</h1>
+      </div>
+      
+      <p style="font-size: 14px; color: #64748b;">This code will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+    </div>
+    ${getEmailFooter()}
+  </div>
+`;
 
 // Initialize logger
 const logger = new Logger();
@@ -65,6 +124,7 @@ app.use('/uploads', express.static(config.upload.directory));
 
 const dbManager = new DatabaseManager();
 const circuitBreaker = new CircuitBreaker(5, 60000);
+const riderLocations = new Map(); // Store rider_id -> { latitude, longitude, updatedAt }
 
 // (legacy token store removed) - we now use JWT access tokens and DB-backed refresh tokens
 
@@ -141,8 +201,10 @@ let pool;
       await ensureOrdersTable();
       await ensureOrderItemsTable();
       await ensureRefreshTokensTable();
+      await ensureMpesaTables();
       await ensureRefreshTokensAuditTable();
       await ensureFavoritesTable();
+      await ensureNotificationsTable();
       await seedRiderOrdersIfEmpty();
       logger.info('✅ DB helper tables ensured and rider orders seeded (if empty)');
     } catch (err) {
@@ -285,6 +347,21 @@ app.post('/api/auth/register', async (req, res) => {
     };
 
     res.json({ accessToken, refreshToken, user });
+
+    // Send welcome notification
+    createNotification(dbUser.id, 'welcome', 'Welcome! 🎉', `Welcome to Kuku ni Sisi, ${dbUser.name}! Explore our delicious menu and place your first order.`).catch(() => { });
+
+    // Send welcome email via Resend
+    if (process.env.RESEND_API_KEY) {
+      resend.emails.send({
+        from: 'Kuku ni Sisi <onboarding@resend.dev>',
+        to: [email],
+        subject: 'Welcome to Kuku ni Sisi! 🍗',
+        html: getWelcomeTemplate(user.name)
+      })
+        .then(result => console.log('Welcome email sent successfully:', result))
+        .catch(err => console.error('CRITICAL: Failed to send welcome email:', err.message, err.response?.data || ''));
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });
@@ -563,6 +640,8 @@ const ensureMenuTables = async () => {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      CREATE INDEX IF NOT EXISTS idx_menu_categories_order ON public.menu_categories(display_order);
+      CREATE INDEX IF NOT EXISTS idx_menu_categories_active ON public.menu_categories(is_active) WHERE is_active = true;
     `);
 
     // Create menu items table
@@ -578,6 +657,8 @@ const ensureMenuTables = async () => {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      CREATE INDEX IF NOT EXISTS idx_menu_items_category ON public.menu_items(category_id);
+      CREATE INDEX IF NOT EXISTS idx_menu_items_available ON public.menu_items(is_available) WHERE is_available = true;
     `);
 
     // Seed categories if empty
@@ -746,6 +827,164 @@ const ensureFavoritesTable = async () => {
   }
 };
 
+// Ensure MPESA tables exist
+const ensureMpesaTables = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.mpesa_stk_requests (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
+        merchant_request_id TEXT,
+        checkout_request_id TEXT,
+        response_code TEXT,
+        response_description TEXT,
+        amount NUMERIC,
+        phone TEXT,
+        account_reference TEXT,
+        transaction_desc TEXT,
+        status TEXT DEFAULT 'initiated',
+        provider_response JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mpesa_stk_requests_checkout ON public.mpesa_stk_requests(checkout_request_id);
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.mpesa_stk_callbacks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        stk_request_id UUID REFERENCES public.mpesa_stk_requests(id) ON DELETE SET NULL,
+        merchant_request_id TEXT,
+        checkout_request_id TEXT,
+        result_code INTEGER,
+        result_desc TEXT,
+        mpesa_receipt_number TEXT,
+        amount NUMERIC,
+        phone TEXT,
+        transaction_date TEXT,
+        body JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'orders' AND column_name = 'payment_status'
+        ) THEN
+          ALTER TABLE public.orders ADD COLUMN payment_status TEXT DEFAULT 'pending';
+        END IF;
+      END
+      $$;
+    `);
+  } catch (err) {
+    console.error('Failed to ensure MPesa tables:', err);
+  }
+};
+
+// Ensure notifications table
+const ensureNotificationsTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'info',
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        data JSONB DEFAULT '{}',
+        is_read BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+    // Ensure 'data' column exists (may be missing if table was created in an older version)
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'notifications' AND column_name = 'data'
+        ) THEN
+          ALTER TABLE public.notifications ADD COLUMN data JSONB DEFAULT '{}';
+        END IF;
+      END
+      $$;
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id, created_at DESC);`);
+    console.log('✅ Notifications table ready (with data column)');
+  } catch (err) {
+    console.error('Failed to ensure notifications table:', err);
+  }
+};
+
+// Helper: create a notification and broadcast via SSE
+async function createNotification(userId, type, title, message, data = {}) {
+  try {
+    console.log(`Creating notification for user ${userId}: ${title}`);
+    const { rows } = await pool.query(
+      `INSERT INTO public.notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [userId, type, title, message, JSON.stringify(data)]
+    );
+    const notification = rows[0];
+    console.log('Notification created:', notification.id);
+
+    // Broadcast to connected SSE clients
+    broadcastRiderEvent({ type: 'notification.new', notification });
+    return notification;
+  } catch (err) {
+    logger.error('Failed to create notification', err);
+    return null;
+  }
+}
+
+// Helper: broadcast a notification to multiple users based on role
+async function createBroadcastNotification(targetRole, type, title, message, data = {}) {
+  try {
+    let userQuery = 'SELECT id FROM public.users';
+    let params = [];
+
+    if (targetRole && targetRole !== 'all') {
+      userQuery += ' WHERE role = $1';
+      params.push(targetRole);
+    }
+
+    const { rows: users } = await pool.query(userQuery, params);
+    console.log(`Broadcast to ${targetRole}: found ${users.length} users`);
+    const notifications = [];
+
+    for (const user of users) {
+      const { rows } = await pool.query(
+        `INSERT INTO public.notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [user.id, type, title, message, JSON.stringify(data)]
+      );
+      if (rows[0]) {
+        notifications.push(rows[0]);
+      }
+    }
+    console.log(`Broadcast created ${notifications.length} notifications`);
+
+    // Broadcast one event indicating new notifications are available
+    // Clients will fetch their own via the API, but we can also broadcast the broadcast itself
+    broadcastRiderEvent({
+      type: 'notification.broadcast',
+      targetRole,
+      title,
+      message,
+      data
+    });
+
+    return notifications;
+  } catch (err) {
+    logger.error('Failed to create broadcast notification', err);
+    return null;
+  }
+}
+
 // Broadcast helper for SSE
 const broadcastRiderEvent = (event) => {
   const data = `data: ${JSON.stringify(event)}\n\n`;
@@ -791,8 +1030,14 @@ async function syncRiderOrder(orderId) {
     let riderStatus = order.status;
     // When a rider is assigned but hasn't accepted yet, map pre-acceptance statuses to 'assigned'
     // so the order shows up on the rider's dashboard
-    if (order.assigned_rider_id && ['ready_for_pickup', 'preparing', 'pending', 'created'].includes(order.status)) {
+    // Note: 'created' (Pending M-Pesa) should NOT be visible to riders until it becomes 'pending'
+    if (order.assigned_rider_id && ['ready_for_pickup', 'preparing', 'pending'].includes(order.status)) {
       riderStatus = 'assigned';
+    }
+
+    // Skip syncing to rider dashboard if the order is still in 'created' status (pending payment)
+    if (order.status === 'created') {
+      return null;
     }
 
     const { rows: riderUpdateRows } = await pool.query(
@@ -928,13 +1173,27 @@ app.post('/api/rider/update/:id', requireAuth('rider'), async (req, res) => {
     if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const riderOrder = rows[0];
 
-    // 2. Update main orders table as well
+    // 2. Update main orders table as well — if delivered, mark as completed for reports
+    const mainStatus = (status === 'delivered') ? 'completed' : status;
     await pool.query(
       "UPDATE public.orders SET status = $1, updated_at = now() WHERE id = $2",
-      [status, id]
+      [mainStatus, id]
     );
 
-    broadcastRiderEvent({ type: 'order.updated', order: riderOrder });
+    broadcastRiderEvent({ type: 'order.updated', order: { ...riderOrder, status: mainStatus } });
+
+    // Notify customer about rider status change
+    if (riderOrder.customer_id) {
+      const riderStatusMessages = {
+        picked_up: 'Your order has been picked up by the rider',
+        on_the_way: 'Your order is on the way! 🚴',
+        arrived: 'Your rider has arrived at your location',
+        delivered: 'Your order has been delivered. Enjoy! 🎉',
+      };
+      const msg = riderStatusMessages[status] || `Order update: ${status}`;
+      createNotification(riderOrder.customer_id, 'order_status', 'Delivery Update', msg, { orderId: id, status: mainStatus }).catch(() => { });
+    }
+
     return res.json({ ok: true, order: riderOrder });
   } catch (err) {
     console.error('Failed to update rider order', err);
@@ -958,6 +1217,25 @@ app.get('/api/rider/history', requireAuth('rider'), async (req, res) => {
 });
 
 app.get('/api/rider/stream', requireAuth('rider'), (req, res) => {
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+
+  // Send a comment to keep connection alive
+  res.write(': connected\n\n');
+
+  sseClients.add(res);
+
+  // remove when client disconnects
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
+// General SSE stream for authenticated users (customers, admins)
+app.get('/api/stream', requireAuth(), (req, res) => {
   // Set headers for SSE
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1168,7 +1446,6 @@ app.get('/api/admin/categories', requireAuth('admin'), async (req, res) => {
 });
 
 // Create new category with image
-// Create new category with image
 app.post('/api/admin/categories', requireAuth('admin'), upload.single('image'), async (req, res) => {
   try {
     const { name, description, display_order, is_active } = req.body;
@@ -1189,25 +1466,30 @@ app.post('/api/admin/categories', requireAuth('admin'), upload.single('image'), 
       imageUrl = result.paths.webp || result.paths.jpeg;
     }
 
-    const { rows } = await pool.query(
-      'INSERT INTO public.menu_categories (name, description, image_url, display_order, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [
-        name,
-        description || null,
-        imageUrl,
-        display_order && display_order !== 'null' ? parseInt(display_order) : 0,
-        is_active === 'true' || is_active === true || is_active === undefined
-      ]
-    );
-
-    res.status(201).json(rows[0]);
+    await pool.query('BEGIN');
+    try {
+      const { rows } = await pool.query(
+        'INSERT INTO public.menu_categories (name, description, image_url, display_order, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [
+          name,
+          description || null,
+          imageUrl,
+          display_order ? parseInt(display_order) : 0,
+          is_active === 'true' || is_active === true
+        ]
+      );
+      await pool.query('COMMIT');
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      await pool.query('ROLLBACK');
+      throw err;
+    }
   } catch (err) {
-    console.error(err);
+    console.error('Failed to create category:', err);
     res.status(500).json({ error: 'Failed to create category' });
   }
 });
 
-// Update category with optional image
 // Update category with optional image
 app.put('/api/admin/categories/:id', requireAuth('admin'), upload.single('image'), async (req, res) => {
   try {
@@ -1256,7 +1538,6 @@ app.put('/api/admin/categories/:id', requireAuth('admin'), upload.single('image'
   }
 });
 
-// Delete category
 // Delete category
 app.delete('/api/admin/categories/:id', requireAuth('admin'), async (req, res) => {
   try {
@@ -1315,6 +1596,7 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
       notes = null,
       promotion_code = null,
       payment_method = 'cash',
+      phone = null,
       delivery_address = null,
       items = []
     } = req.body || {};
@@ -1333,16 +1615,18 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
           delivery_address.city || 'Nairobi',
           delivery_address.phone || null,
           delivery_address.instructions || null,
-          delivery_address.latitude || null,
-          delivery_address.longitude || null,
+          delivery_address.latitude || delivery_address.lat || null,
+          delivery_address.longitude || delivery_address.lng || null,
           delivery_address.is_default || false
         ]
       );
       deliveryAddressId = addrRows && addrRows[0] && addrRows[0].id;
     }
 
-    const insertOrderQuery = `INSERT INTO public.orders (customer_id, delivery_address_id, subtotal, delivery_fee, discount, total, notes, promotion_code, payment_method, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), now()) RETURNING id, created_at`;
+    const initialStatus = payment_method === 'mpesa' ? 'created' : 'pending';
+
+    const insertOrderQuery = `INSERT INTO public.orders (customer_id, delivery_address_id, subtotal, delivery_fee, discount, total, notes, promotion_code, payment_method, status, phone, created_at, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now(), now()) RETURNING id, created_at`;
 
     const { rows } = await pool.query(insertOrderQuery, [
       userId,
@@ -1353,7 +1637,9 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
       total,
       notes,
       promotion_code,
-      payment_method
+      payment_method,
+      initialStatus,
+      phone
     ]);
 
     const orderId = rows && rows[0] && rows[0].id;
@@ -1375,6 +1661,9 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
     }
 
     res.status(201).json({ success: true, orderId });
+
+    // Notify customer about order placement
+    createNotification(userId, 'order_confirmed', 'Order Placed! 🛒', `Your order #${String(orderId).slice(-6).toUpperCase()} has been placed successfully.`, { orderId }).catch(() => { });
   } catch (err) {
     console.error('Failed to create order', err);
     logger.error('Failed to create order', err);
@@ -1486,14 +1775,34 @@ app.put('/api/admin/orders/:id/status', requireAuth('admin'), async (req, res) =
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    const validStatuses = ['pending', 'preparing', 'ready_for_pickup', 'on_the_way', 'delivered', 'cancelled'];
+    const validStatuses = ['pending', 'preparing', 'ready_for_pickup', 'on_the_way', 'delivered', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
+    // 1. Status Locking: Don't allow moving back from delivered/completed
+    const { rows: currentOrderRows } = await pool.query('SELECT status, payment_method FROM public.orders WHERE id = $1', [req.params.id]);
+    if (currentOrderRows.length === 0) return res.status(404).json({ error: 'Order not found' });
+
+    const currentStatus = currentOrderRows[0].status;
+    const paymentMethod = currentOrderRows[0].payment_method;
+
+    if ((currentStatus === 'delivered' || currentStatus === 'completed') && status !== 'completed' && status !== 'delivered') {
+      return res.status(400).json({ error: `Cannot move order from ${currentStatus} back to ${status}` });
+    }
+
+    // 2. COD Automation: Mark as paid if delivered
+    let paymentStatusUpdate = '';
+    if (status === 'delivered' && paymentMethod === 'cash') {
+      paymentStatusUpdate = ", payment_status = 'paid'";
+    }
+
+    // If admin marks as delivered, auto-transition to completed for reports
+    const finalStatus = (status === 'delivered') ? 'completed' : status;
+
     const { rows } = await pool.query(
-      'UPDATE public.orders SET status = $1, updated_at = now() WHERE id = $2 RETURNING *',
-      [status, req.params.id]
+      `UPDATE public.orders SET status = $1, updated_at = now() ${paymentStatusUpdate} WHERE id = $2 RETURNING *`,
+      [finalStatus, req.params.id]
     );
 
     if (rows.length === 0) {
@@ -1504,6 +1813,25 @@ app.put('/api/admin/orders/:id/status', requireAuth('admin'), async (req, res) =
 
     // SYNC: Ensure rider dashboard is aware of this status change
     await syncRiderOrder(order.id);
+
+    // Create notification for customer about status change
+    if (order.customer_id) {
+      const statusMessages = {
+        pending: 'Your order has been received',
+        preparing: 'Your order is being prepared',
+        ready_for_pickup: 'Your order is ready for pickup',
+        on_the_way: 'Your order is on the way!',
+        completed: 'Your order has been delivered. Enjoy!',
+        cancelled: 'Your order has been cancelled',
+      };
+      const msg = statusMessages[finalStatus] || `Order status updated to ${finalStatus}`;
+      createNotification(order.customer_id, 'order_status', 'Order Update', msg, { orderId: order.id, status: finalStatus }).catch(() => { });
+    }
+
+    // Notify rider if assigned and status is ready_for_pickup
+    if (order.assigned_rider_id && finalStatus === 'ready_for_pickup') {
+      createNotification(order.assigned_rider_id, 'assigned', 'Order Ready for Pickup 📦', `Order #${order.id.slice(-6).toUpperCase()} is ready for pickup.`, { orderId: order.id }).catch(() => { });
+    }
 
     res.json(order);
   } catch (err) {
@@ -1517,6 +1845,7 @@ app.put('/api/admin/orders/:id/status', requireAuth('admin'), async (req, res) =
 app.post('/api/admin/orders/:id/assign-rider', requireAuth('admin'), async (req, res) => {
   try {
     const { rider_id } = req.body || {};
+    const order_id = req.params.id;
 
     if (!rider_id) {
       return res.status(400).json({ error: 'Rider ID is required' });
@@ -1542,7 +1871,7 @@ app.post('/api/admin/orders/:id/assign-rider', requireAuth('admin'), async (req,
            updated_at = now() 
        WHERE id = $2 
        RETURNING *`,
-      [rider_id, req.params.id]
+      [rider_id, order_id]
     );
 
     if (orderRows.length === 0) {
@@ -1550,6 +1879,9 @@ app.post('/api/admin/orders/:id/assign-rider', requireAuth('admin'), async (req,
     }
 
     const order = orderRows[0];
+
+    // Notify rider of assignment
+    createNotification(rider_id, 'assigned', 'New Order Assigned 🚴', `You have been assigned to order #${order_id.slice(-6).toUpperCase()}.`, { orderId: order_id }).catch(() => { });
 
     // Store assignment in rider_orders table for rider dashboard
     await syncRiderOrder(order.id);
@@ -1581,12 +1913,12 @@ app.get('/api/admin/riders', requireAuth('admin'), async (req, res) => {
 // Admin: create rider
 app.get('/api/admin/reports', requireAuth('admin'), async (req, res) => {
   try {
-    // 1. Get summary stats
+    // 1. Get summary stats — count both 'delivered' and 'completed' orders
     const statsQuery = `
       SELECT 
-        (SELECT COALESCE(SUM(total), 0) FROM public.orders WHERE status = 'delivered') as total_revenue,
-        (SELECT COUNT(*) FROM public.orders) as total_orders,
-        (SELECT COALESCE(AVG(total), 0) FROM public.orders WHERE status = 'delivered') as avg_order_value,
+        (SELECT COALESCE(SUM(total), 0) FROM public.orders WHERE status IN ('delivered', 'completed')) as total_revenue,
+        (SELECT COUNT(*) FROM public.orders WHERE status IN ('delivered', 'completed')) as total_orders,
+        (SELECT COALESCE(AVG(total), 0) FROM public.orders WHERE status IN ('delivered', 'completed')) as avg_order_value,
         (SELECT COUNT(*) FROM public.users WHERE role = 'customer') as total_customers,
         (SELECT COUNT(*) FROM public.users WHERE role = 'rider') as total_riders
     `;
@@ -1601,7 +1933,7 @@ app.get('/api/admin/reports', requireAuth('admin'), async (req, res) => {
       FROM public.menu_categories c
       LEFT JOIN public.menu_items mi ON c.id = mi.category_id
       LEFT JOIN public.order_items oi ON mi.id = oi.menu_item_id
-      LEFT JOIN public.orders o ON oi.order_id = o.id AND o.status = 'delivered'
+      LEFT JOIN public.orders o ON oi.order_id = o.id AND o.status IN ('delivered', 'completed')
       GROUP BY c.id, c.name
       ORDER BY revenue DESC
     `;
@@ -1617,7 +1949,7 @@ app.get('/api/admin/reports', requireAuth('admin'), async (req, res) => {
         SELECT CURRENT_DATE - i as date
         FROM generate_series(0, 6) i
       ) dates
-      LEFT JOIN public.orders o ON DATE(o.created_at) = dates.date AND o.status = 'delivered'
+      LEFT JOIN public.orders o ON DATE(o.created_at) = dates.date AND o.status IN ('delivered', 'completed')
       GROUP BY date, dates.date
       ORDER BY dates.date ASC
     `;
@@ -1700,6 +2032,160 @@ app.put('/api/profile', requireAuth(), (req, res) => {
       res.status(500).json({ error: 'DB error' });
     }
   })();
+});
+
+// ============ NOTIFICATIONS ENDPOINTS ============
+
+// Get current user's notifications
+app.get('/api/notifications', requireAuth(), (req, res) => {
+  (async () => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT * FROM public.notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+        [req.user.id]
+      );
+      console.log(`Fetched ${rows.length} notifications for user ${req.user.id}`);
+      res.json(rows || []);
+    } catch (err) {
+      console.error('Failed to fetch notifications', err);
+      res.status(500).json({ error: 'DB error' });
+    }
+  })();
+});
+
+// Mark a notification as read
+app.put('/api/notifications/:id/read', requireAuth(), (req, res) => {
+  (async () => {
+    try {
+      const { id } = req.params;
+      await pool.query('UPDATE public.notifications SET is_read = true WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to mark notification as read', err);
+      res.status(500).json({ error: 'DB error' });
+    }
+  })();
+});
+
+// Mark all notifications as read
+app.put('/api/notifications/read-all', requireAuth(), (req, res) => {
+  (async () => {
+    try {
+      await pool.query('UPDATE public.notifications SET is_read = true WHERE user_id = $1', [req.user.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to mark all notifications as read', err);
+      res.status(500).json({ error: 'DB error' });
+    }
+  })();
+});
+
+// Delete a single notification
+app.delete('/api/notifications/:id', requireAuth(), (req, res) => {
+  (async () => {
+    try {
+      const { id } = req.params;
+      await pool.query('DELETE FROM public.notifications WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to delete notification', err);
+      res.status(500).json({ error: 'DB error' });
+    }
+  })();
+});
+
+// Delete all notifications for the user
+app.delete('/api/notifications', requireAuth(), (req, res) => {
+  (async () => {
+    try {
+      await pool.query('DELETE FROM public.notifications WHERE user_id = $1', [req.user.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to clear notifications', err);
+      res.status(500).json({ error: 'DB error' });
+    }
+  })();
+});
+
+// Broadcast notification (Admin only)
+app.post('/api/admin/notifications/broadcast', requireAuth('admin'), (req, res) => {
+  (async () => {
+    try {
+      const { targetRole, title, message, data } = req.body;
+      if (!title || !message) {
+        return res.status(400).json({ error: 'Title and message are required' });
+      }
+
+      await createBroadcastNotification(targetRole || 'all', 'info', title, message, data || {});
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to broadcast notification', err);
+      res.status(500).json({ error: 'Failed to broadcast' });
+    }
+  })();
+});
+
+// Rider: update current location
+app.put('/api/rider/location', requireAuth('rider'), (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: 'Latitude and longitude are required' });
+  }
+
+  const locationData = {
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+    updatedAt: new Date().toISOString()
+  };
+
+  riderLocations.set(req.user.id, locationData);
+
+  // Broadcast to all connected clients (especially customers tracking their orders)
+  const payload = JSON.stringify({
+    type: 'rider.location',
+    riderId: req.user.id,
+    location: locationData
+  });
+
+  // Global sseClients should be accessible here
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch (err) {
+      // client likely disconnected
+    }
+  }
+
+  res.json({ ok: true });
+});
+
+// Customer: get assigned rider's location
+app.get('/api/orders/:id/rider-location', requireAuth(), async (req, res) => {
+  try {
+    const { id: orderId } = req.params;
+
+    // Check if order exists and get assigned_rider_id
+    const { rows } = await pool.query(
+      'SELECT assigned_rider_id FROM public.orders WHERE id = $1',
+      [orderId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const riderId = rows[0].assigned_rider_id;
+    if (!riderId) {
+      return res.status(200).json({ latitude: null, longitude: null });
+    }
+
+    const location = riderLocations.get(riderId) || { latitude: null, longitude: null };
+    res.json(location);
+  } catch (err) {
+    console.error('Failed to fetch rider location', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ============ FAVORITES ENDPOINTS ============
@@ -1960,6 +2446,310 @@ app.delete('/api/payment-methods/:id', requireAuth(), async (req, res) => {
 
 
 // ============================================
+// MPESA / DARJA - OAuth + STK Push helpers
+// ============================================
+
+let _mpesaTokenCache = { accessToken: null, expiresAt: 0 };
+
+function fetchJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    try {
+      const parsed = new URL(url);
+      const reqOptions = {
+        method: options.method || 'GET',
+        hostname: parsed.hostname,
+        path: parsed.pathname + (parsed.search || ''),
+        headers: options.headers || {},
+        port: parsed.port || 443,
+      };
+
+      const req = https.request(reqOptions, (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try {
+            const parsedBody = data ? JSON.parse(data) : {};
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(parsedBody);
+            } else {
+              const err = new Error('Non-2xx response from upstream');
+              err.statusCode = res.statusCode;
+              err.body = parsedBody;
+              reject(err);
+            }
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      req.on('error', (err) => reject(err));
+
+      if (options.body) {
+        req.write(typeof options.body === 'string' ? options.body : JSON.stringify(options.body));
+      }
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+async function getMpesaAccessToken() {
+  const cfg = config.mpesa;
+  const now = Date.now();
+  if (_mpesaTokenCache.accessToken && _mpesaTokenCache.expiresAt > now + 5000) {
+    return _mpesaTokenCache.accessToken;
+  }
+
+  if (!cfg.consumerKey || !cfg.consumerSecret) {
+    throw new Error('MPESA consumer key/secret not configured');
+  }
+
+  const auth = Buffer.from(`${cfg.consumerKey}:${cfg.consumerSecret}`).toString('base64');
+  const url = cfg.oauthUrl;
+
+  const tokenResp = await fetchJson(url, {
+    method: 'GET',
+    headers: { Authorization: `Basic ${auth}` },
+  });
+
+  if (!tokenResp.access_token || !tokenResp.expires_in) throw new Error('Failed to obtain MPESA access token');
+
+  _mpesaTokenCache.accessToken = tokenResp.access_token;
+  _mpesaTokenCache.expiresAt = Date.now() + (parseInt(tokenResp.expires_in, 10) - 10) * 1000;
+  return _mpesaTokenCache.accessToken;
+}
+
+function makeTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+async function initiateStkPush({ amount, phone, accountRef = 'Order', description = 'Payment', callbackPath = '/api/mpesa/callback' }) {
+  const cfg = config.mpesa;
+  const token = await getMpesaAccessToken();
+  const timestamp = makeTimestamp();
+  const password = Buffer.from(`${cfg.shortcode}${cfg.passkey}${timestamp}`).toString('base64');
+
+  const callbackBase = cfg.callbackBase || `${config.server.isDev ? `http://localhost:${config.server.port}` : ''}`;
+  const callbackUrl = (callbackBase && callbackBase.endsWith('/')) ? `${callbackBase.replace(/\/$/, '')}${callbackPath}` : `${callbackBase}${callbackPath}`;
+
+  const payload = {
+    BusinessShortCode: cfg.shortcode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Number(amount),
+    PartyA: phone,
+    PartyB: cfg.shortcode,
+    PhoneNumber: phone,
+    CallBackURL: callbackUrl || '',
+    AccountReference: accountRef,
+    TransactionDesc: description,
+  };
+
+  const resp = await fetchJson(cfg.stkUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: payload,
+  });
+
+  return resp;
+}
+
+// Endpoint to initiate STK push for authenticated users
+app.post('/api/mpesa/stk', requireAuth(), async (req, res) => {
+  try {
+    const { amount, phone, accountRef, description, orderId } = req.body || {};
+    logger.info('STK Push Request', { amount, phone, accountRef, description, orderId });
+    if (!amount || !phone) return res.status(400).json({ error: 'amount and phone are required' });
+
+    const normalizedPhone = phone.replace(/[^0-9]/g, '');
+    // Ensure phone is in 2547XXXXXXXX or 2541XXXXXXXX format
+    const msisdn = normalizedPhone.startsWith('0') ? `254${normalizedPhone.slice(1)}` : (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1') ? `254${normalizedPhone}` : normalizedPhone);
+
+    const result = await initiateStkPush({ amount, phone: msisdn, accountRef, description });
+
+    // Persist STK request to DB
+    try {
+      const insertRes = await pool.query(`
+        INSERT INTO public.mpesa_stk_requests (
+          order_id, merchant_request_id, checkout_request_id, response_code, response_description,
+          amount, phone, account_reference, transaction_desc, provider_response
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
+      `, [orderId || null, result.MerchantRequestID || null, result.CheckoutRequestID || null, result.ResponseCode || null, result.ResponseDescription || null, amount, msisdn, accountRef || null, description || null, result]);
+
+      const saved = insertRes.rows[0];
+
+      if (orderId) {
+        // update order payment_status to processing
+        await pool.query('UPDATE public.orders SET payment_status = $1, payment_method = $2, updated_at = now() WHERE id = $3', ['processing', 'mpesa', orderId]).catch(() => { });
+      }
+
+      return res.json({ success: true, provider: 'mpesa', result, stkRequest: saved });
+    } catch (err) {
+      logger.error('Failed to save MPesa STK request', err);
+      return res.status(500).json({ error: 'STK push sent but failed to persist request', details: err.message || err });
+    }
+  } catch (err) {
+    const details = err.body ? JSON.stringify(err.body) : (err.message || String(err));
+    logger.error('Failed to initiate MPesa STK push', { error: err.message, body: err.body, statusCode: err.statusCode });
+    return res.status(500).json({ error: 'Failed to initiate STK push', details });
+  }
+});
+
+// Callback endpoint for MPesa STK Push (public endpoint)
+app.post('/api/mpesa/callback', async (req, res) => {
+  try {
+    // delegate to shared processor
+    await processMpesaCallback(req.body);
+    res.json({ ResultDesc: 'Accepted', ResultCode: 0 });
+    return;
+  } catch (err) {
+    logger.error('Error handling MPesa callback', err);
+    res.status(500).json({ error: 'Callback handling error' });
+  }
+});
+
+// Admin endpoints to list MPesa requests and callbacks
+app.get('/api/mpesa/requests', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM public.mpesa_stk_requests ORDER BY created_at DESC LIMIT 200');
+    res.json(rows || []);
+  } catch (err) {
+    logger.error('Failed to fetch mpesa requests', err);
+    res.status(500).json({ error: 'DB error' });
+  }
+});
+
+app.get('/api/mpesa/callbacks', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM public.mpesa_stk_callbacks ORDER BY created_at DESC LIMIT 200');
+    res.json(rows || []);
+  } catch (err) {
+    logger.error('Failed to fetch mpesa callbacks', err);
+    res.status(500).json({ error: 'DB error' });
+  }
+});
+
+// Dev helper: process MPesa callback payload (reusable)
+async function processMpesaCallback(body) {
+  try {
+    logger.info('Processing MPesa callback', { body });
+    const payload = body || {};
+    const cb = (payload.Body && payload.Body.stkCallback) ? payload.Body.stkCallback : (payload.stkCallback || payload);
+
+    const merchantRequestId = cb.MerchantRequestID || cb.merchantRequestID || null;
+    const checkoutRequestId = cb.CheckoutRequestID || cb.checkoutRequestID || null;
+    const resultCode = typeof cb.ResultCode !== 'undefined' ? Number(cb.ResultCode) : null;
+    const resultDesc = cb.ResultDesc || cb.ResultDesc || null;
+
+    let amount = null, mpesaReceipt = null, phone = null, transactionDate = null;
+    const items = cb.CallbackMetadata && (cb.CallbackMetadata.Item || cb.CallbackMetadata.items || cb.CallbackMetadata) ? (cb.CallbackMetadata.Item || cb.CallbackMetadata.items || cb.CallbackMetadata) : [];
+    if (Array.isArray(items)) {
+      for (const it of items) {
+        const name = (it.Name || it.name || '').toLowerCase();
+        if (name === 'amount') amount = it.Value || it.value || amount;
+        if (name === 'mpesareceiptnumber' || name === 'receiptnumber' || name === 'mpesa receipt number') mpesaReceipt = it.Value || it.value || mpesaReceipt;
+        if (name === 'phonenumber' || name === 'phone') phone = it.Value || it.value || phone;
+        if (name === 'transactiondate' || name === 'transaction date') transactionDate = it.Value || it.value || transactionDate;
+      }
+    }
+
+    // Find existing STK request
+    let stkRequest = null;
+    try {
+      const q = await pool.query('SELECT * FROM public.mpesa_stk_requests WHERE checkout_request_id = $1 OR merchant_request_id = $2 LIMIT 1', [checkoutRequestId, merchantRequestId]);
+      if (q.rows && q.rows.length > 0) stkRequest = q.rows[0];
+    } catch (err) {
+      logger.error('DB error when finding stk request', err);
+    }
+
+    // Persist callback
+    try {
+      await pool.query(`
+        INSERT INTO public.mpesa_stk_callbacks (
+          stk_request_id, merchant_request_id, checkout_request_id, result_code, result_desc,
+          mpesa_receipt_number, amount, phone, transaction_date, body
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `, [stkRequest ? stkRequest.id : null, merchantRequestId, checkoutRequestId, resultCode, resultDesc, mpesaReceipt, amount, phone, transactionDate, payload]);
+
+      const newStatus = resultCode === 0 ? 'success' : 'failed';
+      try {
+        await pool.query(`UPDATE public.mpesa_stk_requests SET status = $1, provider_response = COALESCE(provider_response, '{}'::jsonb) || $2::jsonb, updated_at = now() WHERE checkout_request_id = $3 OR merchant_request_id = $4`, [newStatus, JSON.stringify({ callback: payload }), checkoutRequestId, merchantRequestId]);
+      } catch (err) {
+        logger.error('Failed to update mpesa_stk_requests', err);
+      }
+
+      if (stkRequest && stkRequest.order_id) {
+        try {
+          if (resultCode === 0) {
+            // If payment successful, set order status to 'pending' (placed) and payment_status to 'paid'
+            await pool.query('UPDATE public.orders SET status = $1, payment_status = $2, updated_at = now() WHERE id = $3', ['pending', 'paid', stkRequest.order_id]);
+            // Notify customer about successful payment
+            createNotification(null, 'payment_received', 'Payment Received ✅', `Your M-Pesa payment of KES ${amount || ''} has been received.`, { orderId: stkRequest.order_id }).catch(async () => { });
+            // Determine customer_id for notification
+            try {
+              const { rows: orderUserRows } = await pool.query('SELECT customer_id FROM public.orders WHERE id = $1', [stkRequest.order_id]);
+              if (orderUserRows[0]?.customer_id) {
+                await createNotification(orderUserRows[0].customer_id, 'payment_received', 'Payment Received ✅', `Your M-Pesa payment of KES ${amount || ''} has been received.`, { orderId: stkRequest.order_id });
+              }
+            } catch (nErr) { /* ignore */ }
+            // Broadcast payment update to connected clients
+            try {
+              const { rows: updatedRows } = await pool.query('SELECT id, status, payment_status FROM public.orders WHERE id = $1', [stkRequest.order_id]);
+              const updatedOrder = updatedRows && updatedRows[0] ? updatedRows[0] : null;
+              broadcastRiderEvent({ type: 'payment.updated', order: updatedOrder });
+            } catch (err) {
+              logger.error('Failed to broadcast payment update', err);
+            }
+          } else {
+            await pool.query('UPDATE public.orders SET payment_status = $1, updated_at = now() WHERE id = $2', ['failed', stkRequest.order_id]);
+            // Notify customer about failed payment
+            try {
+              const { rows: orderUserRows } = await pool.query('SELECT customer_id FROM public.orders WHERE id = $1', [stkRequest.order_id]);
+              if (orderUserRows[0]?.customer_id) {
+                await createNotification(orderUserRows[0].customer_id, 'payment_failed', 'Payment Failed ❌', `Your M-Pesa payment could not be processed. Please try again.`, { orderId: stkRequest.order_id });
+              }
+            } catch (nErr) { /* ignore */ }
+            try {
+              const { rows: updatedRows } = await pool.query('SELECT id, status, payment_status FROM public.orders WHERE id = $1', [stkRequest.order_id]);
+              const updatedOrder = updatedRows && updatedRows[0] ? updatedRows[0] : null;
+              broadcastRiderEvent({ type: 'payment.updated', order: updatedOrder });
+            } catch (err) {
+              logger.error('Failed to broadcast payment update', err);
+            }
+          }
+        } catch (err) {
+          logger.error('Failed to update order based on mpesa callback', err);
+        }
+      }
+    } catch (err) {
+      logger.error('Failed to persist mpesa callback', err);
+    }
+  } catch (err) {
+    logger.error('processMpesaCallback error', err);
+    throw err;
+  }
+}
+
+// Dev-only: simulate an MPesa callback locally (no ngrok required)
+app.post('/api/mpesa/simulate-callback', requireAuth(), async (req, res) => {
+  if (!config.isDev) return res.status(403).json({ error: 'Simulation endpoint allowed only in development' });
+  try {
+    const payload = req.body || {};
+    await processMpesaCallback(payload);
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error('Simulation callback failed', err);
+    return res.status(500).json({ error: 'Simulation failed', details: err.message || err });
+  }
+});
+
+
+// ============================================
 // PROFILE UPDATE & AVATAR UPLOAD
 // ============================================
 
@@ -2046,6 +2836,19 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
+    // Ensure reset_token columns exist
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='reset_token') THEN
+          ALTER TABLE public.users ADD COLUMN reset_token TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name='reset_token_expires') THEN
+          ALTER TABLE public.users ADD COLUMN reset_token_expires TIMESTAMPTZ;
+        END IF;
+      END $$;
+    `);
+
     const { rows } = await pool.query('SELECT id, name FROM public.users WHERE email = $1', [email.toLowerCase().trim()]);
     if (rows.length === 0) {
       // Don't reveal if email exists
@@ -2054,6 +2857,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     const user = rows[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetCode = resetToken.slice(0, 6).toUpperCase(); // Short code for the email
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await pool.query(
@@ -2061,30 +2865,29 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       [resetToken, expires, user.id]
     );
 
-    const resetUrl = `${process.env.APP_URL || 'http://localhost:8082'}/reset-password?token=${resetToken}`;
-
-    await resend.emails.send({
-      from: 'Speedy Bites <onboarding@resend.dev>',
-      to: [email],
-      subject: 'Reset Your Password - Speedy Bites',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #f97316;">🍔 Speedy Bites</h2>
-          <p>Hi ${user.name || 'there'},</p>
-          <p>We received a request to reset your password. Click the button below to set a new password:</p>
-          <a href="${resetUrl}" style="display: inline-block; background: #f97316; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">
-            Reset Password
-          </a>
-          <p style="color: #666; font-size: 14px;">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-          <p style="color: #999; font-size: 12px;">Speedy Bites — Made with ❤️ in Kenya</p>
-        </div>
-      `
-    });
+    // Try to send email via Resend if configured
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const result = await resend.emails.send({
+          from: 'Kuku ni Sisi <onboarding@resend.dev>',
+          to: [email],
+          subject: 'Reset Your Password - Kuku ni Sisi',
+          html: getPasswordResetTemplate(user.name, resetCode),
+        });
+        console.log('Password reset email sent successfully:', result);
+      } catch (emailErr) {
+        console.error('CRITICAL: Failed to send reset email via Resend:', emailErr.message, emailErr.response?.data || '');
+        // Still return success — don't reveal email delivery status
+      }
+    } else {
+      // No email service configured — log the token for development
+      console.log(`[DEV] Password reset requested for ${email}. Reset token: ${resetToken} (code: ${resetCode})`);
+    }
 
     res.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
   } catch (err) {
-    logger.error('Failed to send reset email', err);
+    console.error('Failed to process forgot-password:', err.message);
+    logger.error('Failed to process forgot-password', err);
     res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
   }
 });

@@ -6,9 +6,12 @@ import {
   UtensilsCrossed,
   Bike,
   BarChart3,
+  DollarSign,
   LogOut,
   Menu,
-  X
+  X,
+  Bell,
+  Send
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
@@ -27,6 +30,9 @@ const navItems = [
   { path: '/admin/menu', label: 'Menu', icon: UtensilsCrossed },
   { path: '/admin/riders', label: 'Riders', icon: Bike },
   { path: '/admin/reports', label: 'Reports', icon: BarChart3 },
+  { path: '/admin/mpesa', label: 'Payments', icon: DollarSign },
+  { path: '/admin/notifications', label: 'Broadcast Center', icon: Send },
+  { path: '/profile/notifications', label: 'My Notifications', icon: Bell },
 ];
 
 export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
@@ -66,7 +72,7 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
             <div className="flex items-center gap-3">
               <Logo size="sm" />
               <div>
-                <h1 className="font-bold text-sm">Speedy Bites</h1>
+                <h1 className="font-bold text-sm">Kuku ni Sisi</h1>
                 <p className="text-xs text-muted-foreground">Admin Portal</p>
               </div>
             </div>

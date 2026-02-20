@@ -13,14 +13,14 @@ import type { MenuItem } from '@/lib/api';
 import { toast } from 'sonner';
 
 // Optional local interface for component-specific properties
-interface MealDetailsItem extends MenuItem {}
+interface MealDetailsItem extends MenuItem { }
 
 export const MealDetailsPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { addItem } = useCart();
   const { user } = useAuth();
-  
+
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
   const [item, setItem] = useState<MenuItem | null>(null);
@@ -99,14 +99,15 @@ export const MealDetailsPage = () => {
   return (
     <div className="min-h-screen bg-background pb-24 lg:min-h-0 lg:bg-transparent lg:pb-0">
       {/* Hero Image */}
-      <div className="relative h-72 bg-muted">
+      <div className="relative h-80 bg-muted overflow-hidden">
         <img
           src={getImageURL(item.image || item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80')}
           alt={item.name}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+          loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-foreground/20 to-transparent" />
-        
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/10" />
+
         {/* Header overlay */}
         <div className="absolute top-0 left-0 right-0">
           <Header showBack transparent showCart />
@@ -156,8 +157,8 @@ export const MealDetailsPage = () => {
         <h1 className="text-2xl font-bold mb-2">{item.name}</h1>
 
         {/* Price */}
-        <PriceDisplay 
-          price={item.price} 
+        <PriceDisplay
+          price={item.price}
           originalPrice={item.originalPrice}
           size="xl"
           className="mb-4"

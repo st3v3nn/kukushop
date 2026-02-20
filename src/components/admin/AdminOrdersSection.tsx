@@ -68,6 +68,7 @@ export const AdminOrdersSection = () => {
             case 'arrived': return 'bg-indigo-500/10 text-indigo-600';
             case 'delivered': return 'bg-green-500/10 text-green-600';
             case 'cancelled': return 'bg-red-500/10 text-red-600';
+            case 'created': return 'bg-orange-500/10 text-orange-600';
             default: return 'bg-gray-500/10 text-gray-600';
         }
     };
@@ -107,7 +108,7 @@ export const AdminOrdersSection = () => {
                                         <div className="flex items-center gap-3">
                                             <span className="font-bold text-lg">#{order.order_number || order.id.slice(0, 8)}</span>
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                                                {order.status.replace('_', ' ').toUpperCase()}
+                                                {order.status === 'created' ? 'PENDING PAYMENT' : order.status.replace('_', ' ').toUpperCase()}
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -175,6 +176,7 @@ export const AdminOrdersSection = () => {
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
+                                                <SelectItem value="created">Pending Payment</SelectItem>
                                                 <SelectItem value="pending">Pending</SelectItem>
                                                 <SelectItem value="preparing">Preparing</SelectItem>
                                                 <SelectItem value="on_the_way">On Way</SelectItem>

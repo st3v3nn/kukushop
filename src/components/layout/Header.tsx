@@ -4,6 +4,7 @@ import { useCart } from '@/contexts/CartContext';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/Logo';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 
 interface HeaderProps {
   title?: string;
@@ -53,7 +54,7 @@ export const Header = ({
               <Logo size="sm" />
               <div className="flex flex-col">
                 <span className="text-xs text-muted-foreground">Deliver to</span>
-                <span className="font-semibold text-sm">Nairobi, Kenya</span>
+                <span className="font-semibold text-sm">Nakuru, Kenya</span>
               </div>
             </div>
           )}
@@ -62,6 +63,7 @@ export const Header = ({
         {/* Right */}
         <div className="flex items-center gap-1">
           <ThemeToggle />
+          <NotificationCenter />
           {showCart && (
             <Link
               to="/cart"

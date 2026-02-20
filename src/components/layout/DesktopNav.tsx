@@ -36,7 +36,7 @@ export const DesktopNav = ({
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2">
               <Logo size="sm" />
-              <span className="font-bold text-xl">Speedy Bites</span>
+              <span className="font-bold text-xl">Kuku ni Sisi</span>
             </Link>
 
             {/* Navigation Links */}

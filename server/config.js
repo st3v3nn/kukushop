@@ -44,7 +44,7 @@ class Config {
   // ============================================
   get upload() {
     const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
-    
+
     // Ensure upload directory exists
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -76,6 +76,7 @@ class Config {
       'http://localhost:8081',
       'http://localhost:8082',
       'http://localhost:8083',
+      'http://localhost:5173',
       'http://127.0.0.1:8082',
     ];
 
@@ -97,7 +98,7 @@ class Config {
   // ============================================
   get auth() {
     const tokenSecret = process.env.TOKEN_SECRET;
-    
+
     if (this.isProd && (!tokenSecret || tokenSecret.length < 32)) {
       throw new Error('TOKEN_SECRET must be at least 32 characters in production');
     }
@@ -127,7 +128,7 @@ class Config {
   // ============================================
   get logging() {
     const logDir = process.env.LOG_DIR || path.join(__dirname, '..', 'logs');
-    
+
     // Ensure log directory exists
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
@@ -162,6 +163,26 @@ class Config {
       productVariants: this.parseBool(process.env.FEATURE_PRODUCT_VARIANTS, false),
       inventoryTracking: this.parseBool(process.env.FEATURE_INVENTORY_TRACKING, false),
     };
+  }
+
+  // ============================================
+  // MPESA / DARJA
+  // ============================================
+  get mpesa() {
+    const sandbox = this.parseBool(process.env.MPESA_SANDBOX, true);
+    const consumerKey = process.env.MPESA_CONSUMER_KEY || '';
+    const consumerSecret = process.env.MPESA_CONSUMER_SECRET || '';
+    const shortcode = process.env.MPESA_SHORTCODE || process.env.MPESA_BUSINESS_SHORTCODE || '';
+    const passkey = process.env.MPESA_PASSKEY || '';
+    const callbackBase = process.env.MPESA_CALLBACK_BASE || '';
+    const oauthUrl = sandbox
+      ? 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+      : 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+    const stkUrl = sandbox
+      ? 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
+      : 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+
+    return { sandbox, consumerKey, consumerSecret, shortcode, passkey, callbackBase, oauthUrl, stkUrl };
   }
 
   // ============================================

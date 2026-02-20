@@ -81,7 +81,7 @@ export const OrdersPage = () => {
           {orders.map(order => (
             <button
               key={order.id}
-              onClick={() => navigate(`/orders/${order.id}`)}
+              onClick={() => navigate(`/order/${order.id}`)}
               className="w-full rounded-xl bg-card p-4 shadow-card text-left transition-transform active:scale-[0.98]"
             >
               <div className="flex items-start justify-between mb-3">
