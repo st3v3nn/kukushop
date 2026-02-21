@@ -81,21 +81,6 @@ export const RiderDashboardPage = () => {
     navigate('/');
   };
 
-  // Access check
-  if (isAuthenticated && user && user.role !== 'rider') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="p-8 text-center">
-            <p className="text-lg font-semibold mb-2">Access Denied</p>
-            <p className="text-muted-foreground mb-4">You need rider privileges to access this page.</p>
-            <Button onClick={() => navigate('/')}>Go Home</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const acceptOrder = async (order: any) => {
     try {
       const res = await api.acceptRiderOrder(order.id);
@@ -331,6 +316,21 @@ export const RiderDashboardPage = () => {
       label: activeDelivery.address.street
     }
     : undefined;
+
+  // Access check
+  if (isAuthenticated && user && user.role !== 'rider') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <p className="text-lg font-semibold mb-2">Access Denied</p>
+            <p className="text-muted-foreground mb-4">You need rider privileges to access this page.</p>
+            <Button onClick={() => navigate('/')}>Go Home</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">

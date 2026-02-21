@@ -61,6 +61,66 @@ import { AppLayout } from "./components/layout/AppLayout";
 // Auth
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
+const router = createBrowserRouter(
+  [
+    { path: "/onboarding", element: <OnboardingPage /> },
+    { path: "/login", element: <LoginPage /> },
+    { path: "/register", element: <OnboardingPage /> }, // Map register to onboarding as per current flow
+    { path: "/forgot-password", element: <ForgotPasswordPage /> },
+    { path: "/reset-password", element: <ResetPasswordPage /> },
+
+    {
+      element: <AppLayout />,
+      children: [
+        { path: "/", element: <HomePage /> },
+        { path: "/menu", element: <MenuPage /> },
+        { path: "/meal/:id", element: <MealDetailsPage /> },
+        { path: "/cart", element: <CartPage /> },
+        { path: "/checkout", element: <ProtectedRoute><CheckoutPage /></ProtectedRoute> },
+        { path: "/payment/:orderId", element: <ProtectedRoute><PaymentPage /></ProtectedRoute> },
+        { path: "/orders", element: <ProtectedRoute><OrdersPage /></ProtectedRoute> },
+        { path: "/order/:id", element: <ProtectedRoute><OrderTrackingPage /></ProtectedRoute> },
+        { path: "/order-confirmation/:orderId", element: <OrderConfirmationPage /> },
+        { path: "/profile", element: <ProtectedRoute><ProfilePage /></ProtectedRoute> },
+        { path: "/help", element: <HelpPage /> },
+        { path: "/profile/edit", element: <ProtectedRoute><EditProfilePage /></ProtectedRoute> },
+        { path: "/profile/addresses", element: <ProtectedRoute><AddressesPage /></ProtectedRoute> },
+        { path: "/profile/payments", element: <ProtectedRoute><PaymentsPage /></ProtectedRoute> },
+        { path: "/profile/notifications", element: <ProtectedRoute><NotificationsPage /></ProtectedRoute> },
+        { path: "/favorites", element: <ProtectedRoute><FavoritesPage /></ProtectedRoute> },
+        { path: "/settings", element: <ProtectedRoute><SettingsPage /></ProtectedRoute> },
+      ]
+    },
+
+    // Rider Routes
+    { path: "/rider", element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute> },
+
+    // Admin Routes
+    { path: "/admin", element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute> },
+    { path: "/admin/dashboard", element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute> },
+    { path: "/admin/menu", element: <ProtectedRoute allowedRoles={['admin']}><AdminMenuPage /></ProtectedRoute> },
+    { path: "/admin/orders", element: <ProtectedRoute allowedRoles={['admin']}><AdminOrdersPage /></ProtectedRoute> },
+    { path: "/admin/riders", element: <ProtectedRoute allowedRoles={['admin']}><AdminRidersPage /></ProtectedRoute> },
+    { path: "/admin/reports", element: <ProtectedRoute allowedRoles={['admin']}><AdminReportsPage /></ProtectedRoute> },
+    { path: "/admin/mpesa", element: <ProtectedRoute allowedRoles={['admin']}><AdminMpesaPage /></ProtectedRoute> },
+    { path: "/admin/notifications", element: <ProtectedRoute allowedRoles={['admin']}><AdminNotificationsPage /></ProtectedRoute> },
+
+    { path: "*", element: <NotFound /> },
+  ],
+
+  {
+    future: {
+      v7_relativeSplatPath: true,
+      v7_fetcherPersist: true,
+      v7_normalizeFormMethod: true,
+      v7_partialHydration: true,
+      v7_skipActionErrorRevalidation: true,
+      // @ts-expect-error - Future flag for v7
+      v7_startTransition: true
+    }
+  }
+);
+
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -94,65 +154,7 @@ const App = () => {
                 <SseListener />
                 {/** Use object-based router and opt-in to v7 future flags to silence deprecation warnings */}
                 <RouterProvider
-                  router={createBrowserRouter(
-                    [
-                      { path: "/onboarding", element: <OnboardingPage /> },
-                      { path: "/login", element: <LoginPage /> },
-                      { path: "/register", element: <OnboardingPage /> }, // Map register to onboarding as per current flow
-                      { path: "/forgot-password", element: <ForgotPasswordPage /> },
-                      { path: "/reset-password", element: <ResetPasswordPage /> },
-
-                      {
-                        element: <AppLayout />,
-                        children: [
-                          { path: "/", element: <HomePage /> },
-                          { path: "/menu", element: <MenuPage /> },
-                          { path: "/meal/:id", element: <MealDetailsPage /> },
-                          { path: "/cart", element: <CartPage /> },
-                          { path: "/checkout", element: <ProtectedRoute><CheckoutPage /></ProtectedRoute> },
-                          { path: "/payment/:orderId", element: <ProtectedRoute><PaymentPage /></ProtectedRoute> },
-                          { path: "/orders", element: <ProtectedRoute><OrdersPage /></ProtectedRoute> },
-                          { path: "/order/:id", element: <ProtectedRoute><OrderTrackingPage /></ProtectedRoute> },
-                          { path: "/order-confirmation/:orderId", element: <OrderConfirmationPage /> },
-                          { path: "/profile", element: <ProtectedRoute><ProfilePage /></ProtectedRoute> },
-                          { path: "/help", element: <HelpPage /> },
-                          { path: "/profile/edit", element: <ProtectedRoute><EditProfilePage /></ProtectedRoute> },
-                          { path: "/profile/addresses", element: <ProtectedRoute><AddressesPage /></ProtectedRoute> },
-                          { path: "/profile/payments", element: <ProtectedRoute><PaymentsPage /></ProtectedRoute> },
-                          { path: "/profile/notifications", element: <ProtectedRoute><NotificationsPage /></ProtectedRoute> },
-                          { path: "/favorites", element: <ProtectedRoute><FavoritesPage /></ProtectedRoute> },
-                          { path: "/settings", element: <ProtectedRoute><SettingsPage /></ProtectedRoute> },
-                        ]
-                      },
-
-                      // Rider Routes
-                      { path: "/rider", element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute> },
-
-                      // Admin Routes
-                      { path: "/admin", element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute> },
-                      { path: "/admin/dashboard", element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute> },
-                      { path: "/admin/menu", element: <ProtectedRoute allowedRoles={['admin']}><AdminMenuPage /></ProtectedRoute> },
-                      { path: "/admin/orders", element: <ProtectedRoute allowedRoles={['admin']}><AdminOrdersPage /></ProtectedRoute> },
-                      { path: "/admin/riders", element: <ProtectedRoute allowedRoles={['admin']}><AdminRidersPage /></ProtectedRoute> },
-                      { path: "/admin/reports", element: <ProtectedRoute allowedRoles={['admin']}><AdminReportsPage /></ProtectedRoute> },
-                      { path: "/admin/mpesa", element: <ProtectedRoute allowedRoles={['admin']}><AdminMpesaPage /></ProtectedRoute> },
-                      { path: "/admin/notifications", element: <ProtectedRoute allowedRoles={['admin']}><AdminNotificationsPage /></ProtectedRoute> },
-
-                      { path: "*", element: <NotFound /> },
-                    ],
-
-                    {
-                      future: {
-                        v7_relativeSplatPath: true,
-                        v7_fetcherPersist: true,
-                        v7_normalizeFormMethod: true,
-                        v7_partialHydration: true,
-                        v7_skipActionErrorRevalidation: true,
-                        // @ts-expect-error - Future flag for v7
-                        v7_startTransition: true
-                      }
-                    }
-                  )}
+                  router={router}
                   future={{
                     v7_startTransition: true,
                   }}
