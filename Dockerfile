@@ -4,7 +4,6 @@
 FROM node:18-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-COPY bun.lockb .
 RUN npm ci --silent
 COPY . .
 RUN npm run build
