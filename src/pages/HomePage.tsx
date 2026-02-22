@@ -118,6 +118,15 @@ export const HomePage = () => {
                 return UtensilsCrossed;
               };
 
+              // Display friendly/brand names for core categories
+              const getDisplayName = (name: string) => {
+                const lower = name.toLowerCase();
+                if (lower.includes('restaurant') || lower.includes('rest')) return 'Kuku ni Sisi Cafe';
+                if (lower.includes('butch') || lower.includes('butcher')) return 'Kuku ni Sisi Butchery';
+                if (lower.includes('groc') || lower.includes('grocer') || lower.includes('groceries')) return 'Kuku ni Sisi Groceries';
+                return name;
+              };
+
               const IconComponent = getIconForCategory(category.name);
 
               return (
@@ -133,7 +142,7 @@ export const HomePage = () => {
 
                   {/* Text */}
                   <div className="text-center">
-                    <h3 className="font-bold text-foreground text-base line-clamp-1">{category.name}</h3>
+                    <h3 className="font-bold text-foreground text-base line-clamp-1">{getDisplayName(category.name)}</h3>
                     <span className="text-xs text-muted-foreground font-medium">{category.itemCount || 0} items</span>
                   </div>
                 </Link>
@@ -147,7 +156,7 @@ export const HomePage = () => {
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <UtensilsCrossed className="h-5 w-5 text-accent" />
-              <h2 className="text-xl font-bold">Restaurant Specials</h2>
+              <h2 className="text-xl font-bold">Kuku ni Sisi Cafe Specials</h2>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {restaurantItems.map(item => (
@@ -161,7 +170,7 @@ export const HomePage = () => {
               to={`/menu${restaurantItems.length > 0 ? `?category=${categoriesWithCounts.find(c => c.name.toLowerCase() === 'restaurant')?.id}` : ''}`}
               className="block mt-4 text-center py-2 text-primary font-semibold hover:text-primary/80 transition-colors"
             >
-              View All Restaurant Items →
+              View All Cafe Items →
             </Link>
           </section>
         )}
@@ -171,7 +180,7 @@ export const HomePage = () => {
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <Beef className="h-5 w-5 text-accent" />
-              <h2 className="text-xl font-bold">Butchery & Meats</h2>
+              <h2 className="text-xl font-bold">Kuku ni Sisi Butchery</h2>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {butcheryItems.map(item => (
@@ -195,7 +204,7 @@ export const HomePage = () => {
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">🥬</span>
-              <h2 className="text-xl font-bold">Fresh Groceries</h2>
+              <h2 className="text-xl font-bold">Kuku ni Sisi Groceries</h2>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {groceryItems.map(item => (

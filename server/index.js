@@ -27,7 +27,7 @@ const getEmailHeader = (title) => `
 const getEmailFooter = () => `
   <div style="padding: 30px 20px; text-align: center; color: #64748b; font-size: 14px; border-top: 1px solid #e2e8f0; background-color: #f8fafc; border-radius: 0 0 12px 12px;">
     <p style="margin: 0 0 10px 0; font-weight: bold; color: #1e293b;">Kuku ni Sisi Cafe, Butchery & Groceries</p>
-    <p style="margin: 0;">Made with ❤️ by BuildbySteve.co.ke</p>
+    <p style="margin: 0;">Work by BuildbySteve.co.ke</p>
     <div style="margin-top: 20px;">
       <a href="https://kukunisisi.co.ke" style="color: #f97316; text-decoration: none; margin: 0 10px;">Visit Website</a>
       <a href="https://kukunisisi.co.ke/menu" style="color: #f97316; text-decoration: none; margin: 0 10px;">Our Menu</a>
@@ -1970,6 +1970,42 @@ app.post('/api/admin/riders', requireAuth('admin'), async (req, res) => {
 
   try {
     const { email, name, phone, password } = req.body || {};
+
+// Admin: get free delivery setting
+app.get('/api/admin/settings/free_delivery', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT value FROM public.app_settings WHERE key = $1', ['free_delivery']);
+    if (!rows || rows.length === 0) {
+      return res.json({ enabled: false });
+    }
+    const value = rows[0].value || {};
+    return res.json(value);
+  } catch (err) {
+    console.error('Failed to fetch free_delivery setting', err);
+    return res.status(500).json({ error: 'Failed to fetch setting' });
+  }
+});
+
+// Admin: update free delivery setting
+app.put('/api/admin/settings/free_delivery', requireAuth('admin'), async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'Invalid payload' });
+
+    const val = { enabled };
+    await pool.query(
+      `INSERT INTO public.app_settings (key, value, created_at, updated_at)
+       VALUES ($1, $2, now(), now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      ['free_delivery', JSON.stringify(val)]
+    );
+
+    return res.json(val);
+  } catch (err) {
+    console.error('Failed to update free_delivery setting', err);
+    return res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
     if (!email || !name) return res.status(400).json({ error: 'email and name are required' });
 
     // generate a password if not provided

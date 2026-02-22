@@ -1,19 +1,23 @@
 // API Configuration - frontend will call the local API server by default
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// Use a relative API base by default so the frontend calls the same origin
+// in production (e.g. proxied /api) instead of hardcoding localhost.
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Helper to construct full image URLs from stored relative paths
 export const getImageURL = (path: string) => {
   if (!path) return '';
   if (path.startsWith('http')) return path;
-  if (API_BASE_URL.startsWith('http')) {
-    try {
+  try {
+    if (API_BASE_URL.startsWith('http')) {
       const url = new URL(API_BASE_URL);
-      return `${url.origin}${path}`;
-    } catch (e) {
-      return path;
+      return `${url.origin}${path.startsWith('/') ? '' : '/'}${path}`;
     }
+    // If API_BASE_URL is relative (eg. '/api'), construct absolute URL using window.location
+    const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+    return `${origin}${path.startsWith('/') ? '' : '/'}${path}`;
+  } catch (e) {
+    return path;
   }
-  return path;
 };
 
 // Token storage keys (unified with AuthContext)
@@ -329,6 +333,9 @@ export const api = {
   createRider: (data: { email: string; name: string; phone?: string; password?: string }) =>
     apiFetch<any>('/admin/riders', { method: 'POST', body: JSON.stringify(data) }),
   deleteRider: (id: string) => apiFetch<void>(`/admin/riders/${id}`, { method: 'DELETE' }),
+  // Admin settings
+  getFreeDeliverySetting: () => apiFetch<{ enabled: boolean }>('/admin/settings/free_delivery'),
+  setFreeDeliverySetting: (enabled: boolean) => apiFetch<{ enabled: boolean }>('/admin/settings/free_delivery', { method: 'PUT', body: JSON.stringify({ enabled }) }),
 
   // Favorites
   getFavorites: () => apiFetch<string[]>('/favorites'),

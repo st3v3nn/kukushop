@@ -61,6 +61,9 @@ const deg2rad = (deg: number) => deg * (Math.PI / 180);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [freeDeliveryEnabled, setFreeDeliveryEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('free_delivery_enabled') === 'true'; } catch { return false; }
+  });
   const [cart, setCart] = useState<Cart>(() => {
     const stored = localStorage.getItem(CART_STORAGE_KEY);
     if (stored) {
@@ -78,10 +81,34 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
+  // Fetch global free delivery setting from server if available
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await api.getFreeDeliverySetting?.().catch(() => null);
+        if (s && typeof s.enabled === 'boolean') {
+          setFreeDeliveryEnabled(Boolean(s.enabled));
+          try { localStorage.setItem('free_delivery_enabled', s.enabled ? 'true' : 'false'); } catch {}
+        }
+      } catch (e) {
+        // ignore and keep localStorage fallback
+      }
+    })();
+  }, []);
+
   const calculateTotals = useCallback((items: CartItem[], discount = 0, promoCode?: string, location?: { lat: number; lng: number } | null): Cart => {
     const subtotal = items.reduce((sum, item) => sum + (item.menuItem.price * item.quantity), 0);
 
     let deliveryFee = DELIVERY_FEE;
+
+    // Global admin-controlled free delivery override (fetched from server or localStorage)
+    try {
+      if (freeDeliveryEnabled) {
+        deliveryFee = 0;
+      }
+    } catch (e) {
+      // ignore
+    }
 
     const loc = location || userLocation;
     if (loc && loc.lat && loc.lng) {

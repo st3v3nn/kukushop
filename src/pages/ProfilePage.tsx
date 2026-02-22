@@ -157,8 +157,18 @@ export const ProfilePage = () => {
 
         {/* App Info */}
         <div className="mt-8 text-center text-sm text-muted-foreground">
-          <p>Speedy Bites v1.0.0</p>
-          <p className="mt-1">Made with ❤️ in Kenya</p>
+          <p>Kuku ni Sisi v1.0.0</p>
+          <p className="mt-1">
+            <a
+              href="https://buildsbysteve.co.ke"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary font-semibold inline-block animate-pulse hover:animate-bounce transition-transform"
+              aria-label="Builds by Steve website"
+            >
+              Work by BuildsbySteve.co.ke
+            </a>
+          </p>
         </div>
       </main>
     </div>

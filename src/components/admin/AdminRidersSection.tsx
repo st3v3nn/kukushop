@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Phone, Star, Package, MapPin } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,12 @@ export const AdminRidersSection = () => {
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [ordersByRider, setOrdersByRider] = useState<any[]>([]);
+  const [ordersDialogOpen, setOrdersDialogOpen] = useState(false);
+  const [selectedRiderName, setSelectedRiderName] = useState<string | null>(null);
+  const [freeDeliveryEnabled, setFreeDeliveryEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('free_delivery_enabled') === 'true'; } catch { return false; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -42,6 +49,16 @@ export const AdminRidersSection = () => {
         // Try fetching riders from backend if endpoint exists
         const resp: any = await (api as any).getRiders?.().catch(() => null);
         if (resp && Array.isArray(resp)) setRiders(resp);
+        // Fetch global free delivery setting from server if available
+        try {
+          const s: any = await (api as any).getFreeDeliverySetting?.().catch(() => null);
+          if (s && typeof s.enabled === 'boolean') {
+            setFreeDeliveryEnabled(Boolean(s.enabled));
+            try { localStorage.setItem('free_delivery_enabled', s.enabled ? 'true' : 'false'); } catch {}
+          }
+        } catch (e) {
+          // ignore
+        }
       } catch (err) {
         // ignore - keep empty state
       }
@@ -107,6 +124,54 @@ export const AdminRidersSection = () => {
   const availableCount = riders.filter(r => r.status === 'available').length;
   const busyCount = riders.filter(r => r.status === 'busy').length;
 
+  // Fetch admin orders and filter by rider when requested
+  const fetchOrdersForRider = async (riderId: string) => {
+    try {
+      const all = await (api as any).getAdminOrders?.();
+      if (all && Array.isArray(all)) {
+        // Try several fields that might reference rider assignment
+        const filtered = all.filter((o: any) => (
+          (o.driver && o.driver.id === riderId) ||
+          o.rider_id === riderId ||
+          o.assigned_rider_id === riderId ||
+          (o.driver && o.driver.name && o.driver.name.toLowerCase().includes((riders.find(r => r.id === riderId)?.name || '').toLowerCase()))
+        ));
+        setOrdersByRider(filtered);
+      } else {
+        setOrdersByRider([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin orders', err);
+      setOrdersByRider([]);
+    }
+  };
+
+  const openOrdersDialog = async (riderId: string, riderName: string) => {
+    setSelectedRiderName(riderName);
+    await fetchOrdersForRider(riderId);
+    setOrdersDialogOpen(true);
+  };
+
+  const toggleFreeDelivery = (enabled: boolean) => {
+    (async () => {
+      try {
+        const resp: any = await (api as any).setFreeDeliverySetting?.(enabled).catch(() => null);
+        if (resp && typeof resp.enabled === 'boolean') {
+          setFreeDeliveryEnabled(Boolean(resp.enabled));
+          try { localStorage.setItem('free_delivery_enabled', resp.enabled ? 'true' : 'false'); } catch {}
+          toast.success(resp.enabled ? 'Free delivery enabled' : 'Free delivery disabled');
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to update free delivery setting', err);
+      }
+      // Fallback to local toggle if API not available
+      try { localStorage.setItem('free_delivery_enabled', enabled ? 'true' : 'false'); } catch {}
+      setFreeDeliveryEnabled(enabled);
+      toast.success(enabled ? 'Free delivery enabled (local)' : 'Free delivery disabled (local)');
+    })();
+  };
+
   return (
     <div className="space-y-6">
       {/* Add rider form */}
@@ -152,6 +217,19 @@ export const AdminRidersSection = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Admin controls */}
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between">
+          <div>
+            <h4 className="font-semibold">Platform Delivery Settings</h4>
+            <p className="text-sm text-muted-foreground">Enable free delivery for all orders</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <Switch checked={freeDeliveryEnabled} onCheckedChange={(v) => toggleFreeDelivery(Boolean(v))} />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Riders List */}
       <div className="space-y-3">
@@ -204,6 +282,7 @@ export const AdminRidersSection = () => {
                   >
                     {rider.status === 'offline' ? 'Set Available' : 'Set Offline'}
                   </Button>
+                  <Button size="sm" onClick={() => openOrdersDialog(rider.id, rider.name)}>View Orders</Button>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -217,6 +296,37 @@ export const AdminRidersSection = () => {
           </Card>
         ))}
       </div>
+
+      {/* Orders dialog per rider */}
+      <Dialog open={ordersDialogOpen} onOpenChange={setOrdersDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Orders by {selectedRiderName}</DialogTitle>
+            <DialogDescription>Shows orders assigned to this rider and total delivery fees collected.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-3 space-y-3 max-h-80 overflow-auto">
+            {ordersByRider.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No orders found for this rider.</p>
+            ) : (
+              ordersByRider.map(o => (
+                <div key={o.id} className="flex items-center justify-between border-b pb-2">
+                  <div>
+                    <p className="font-medium">{o.order_number || o.id}</p>
+                    <p className="text-sm text-muted-foreground">{o.status} • {new Date(o.created_at || o.createdAt || Date.now()).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{o.delivery_fee != null ? `KES ${o.delivery_fee}` : o.deliveryFee ? `KES ${o.deliveryFee}` : 'KES 0'}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-4 flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">Total Orders: {ordersByRider.length}</div>
+            <div className="font-semibold">Total Delivery Fees: KES {ordersByRider.reduce((sum, o) => sum + (Number(o.delivery_fee ?? o.deliveryFee ?? 0) || 0), 0)}</div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Password dialog shown after creating a rider */}
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>

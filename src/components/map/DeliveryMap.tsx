@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import logoUrl from '@/assets/logo.jpg';
 import { cn } from '@/lib/utils';
 
 // Fix for default marker icons in React-Leaflet
@@ -36,7 +37,14 @@ const createCustomIcon = (color: string, emoji: string) => {
   });
 };
 
-const restaurantIcon = createCustomIcon('hsl(4, 85%, 50%)', '🍗');
+// Use brand logo for restaurant/hotel marker (falls back to emoji if logo missing)
+const restaurantIcon = new L.Icon({
+  iconUrl: logoUrl,
+  iconSize: [44, 44],
+  iconAnchor: [22, 44],
+  popupAnchor: [0, -40],
+  className: 'brand-marker rounded-full border-2 border-white shadow-lg',
+});
 const customerIcon = createCustomIcon('hsl(142, 76%, 36%)', '📍');
 const riderIcon = createCustomIcon('hsl(45, 100%, 51%)', '🛵');
 
