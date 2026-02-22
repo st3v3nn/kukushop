@@ -14,7 +14,9 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://speedy_admin:secure_password_here@db:5432/speedy_bites
+      # Use the external Postgres DB credentials (mike_admin).
+      # Dollar sign in password is percent-encoded as %24 to avoid expansion.
+      - DATABASE_URL=postgresql://mike_admin:Mwa%240152@localhost:54812/speedy_bites
       - TOKEN_SECRET=your_secret_key_at_least_32_chars_long
       - MPESA_CONSUMER_KEY
       - MPESA_CONSUMER_SECRET
@@ -23,6 +25,10 @@ services:
       - MPESA_CALLBACK_BASE
     depends_on:
       - db
+    # Temporarily use host networking so the server container can reach
+    # Postgres bound to the host's localhost:54812. This simplifies access
+    # while we finish setup; remove or change for a production setup.
+    network_mode: "host"
     ports:
       - "4000:4000"
 
