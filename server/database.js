@@ -50,7 +50,7 @@ class DatabaseManager {
         logger.debug('New connection created in pool');
       });
 
-      // Test connection
+      // Test connection                
       await this.testConnection();
       this.isConnected = true;
       this.connectionAttempts = 0;
