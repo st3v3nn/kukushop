@@ -1,0 +1,19 @@
+{
+  "devDependencies": {
+    "@agent/tests": "^1.0.0"
+  },
+  "scripts": {
+    "test": "agent test"
+  }
+}
+
+import { test } from '@agent/tests';
+
+test('hello world', () => {
+  expect(true).toBe(true);
+});
+
+export default {
+  testEnvironment: 'node',
+  testTimeout: 5000
+};

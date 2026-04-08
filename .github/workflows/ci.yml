@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: mike_admin
+          POSTGRES_PASSWORD: Mwa$0152
+          POSTGRES_DB: speedy_bites
+        ports:
+          - 54812:5432
+        options: >-
+          --health-cmd "pg_isready -U mike_admin" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install server deps
+        run: npm --prefix server ci
+
+      - name: Start server
+        env:
+          DATABASE_URL: postgresql://mike_admin:Mwa$0152@localhost:5432/speedy_bites
+        run: |
+          nohup env DATABASE_URL="$DATABASE_URL" node server/index.js > server/logs/server.log 2>&1 &
+          sleep 5
+
+      - name: Run integration tests
+        run: bash test/integration/e2e.sh

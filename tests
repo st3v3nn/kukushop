@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@agent/tests": "^1.0.0"
+  },
+  "scripts": {
+    "test": "agent test"
+  }
+}

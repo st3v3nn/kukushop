@@ -1,0 +1,285 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand Colors - Black (text/accents), Golden Yellow (brand), Touch of Red (alerts) */
+    --background: 0 0% 98%; /* light page background */
+    --foreground: 0 0% 6%; /* near-black text */
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 6%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 6%;
+
+    /* Primary - Golden Yellow (brand) */
+    --primary: 48 100% 50%;
+    --primary-foreground: 0 0% 0%;
+
+    /* Secondary - Muted Black for accents */
+    --secondary: 0 0% 6%;
+    --secondary-foreground: 0 0% 98%;
+
+    /* Accent - Slightly darker yellow */
+    --accent: 46 100% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 48 20% 95%;
+    --muted-foreground: 0 0% 35%;
+
+    /* Destructive - Touch of red for alerts */
+    --destructive: 0 85% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success - green reserved */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning - use brand yellow */
+    --warning: 48 100% 50%;
+    --warning-foreground: 0 0% 6%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 96%;
+    --ring: 48 100% 45%;
+
+    --radius: 1rem;
+
+    /* Custom shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.1), 0 8px 10px -6px hsl(0 0% 0% / 0.1);
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 6%;
+    --sidebar-primary: 48 100% 50%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 48 100% 45%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 92%;
+    --sidebar-ring: 48 100% 45%;
+  }
+
+  .dark {
+    --background: 0 0% 6%; /* near-black */
+    --foreground: 0 0% 98%; /* near-white */
+
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Keep brand yellow visible on dark */
+    --primary: 48 100% 50%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 98%;
+
+    --accent: 46 100% 50%;
+    --accent-foreground: 0 0% 0%;
+
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 60%;
+
+    --destructive: 0 85% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 48 100% 50%;
+    --warning-foreground: 0 0% 6%;
+
+    --border: 0 0% 14%;
+    --input: 0 0% 12%;
+    --ring: 48 100% 45%;
+
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 48 100% 50%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 48 100% 45%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 48 100% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Poppins', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  /* Touch-friendly tap target */
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Safe area for mobile */
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-top {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Skeleton loading animation */
+  .skeleton-pulse {
+    @apply animate-pulse bg-muted;
+  }
+
+  /* Smooth transitions and animations */
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .fade-in-up {
+    animation: fadeInUp 0.3s ease-out;
+  }
+
+  .slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+}
+
+@layer components {
+  /* Enhanced food card with professional styling */
+  .food-card {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .food-card:active {
+    @apply scale-[0.98];
+  }
+
+  /* Image container with smooth scaling */
+  .image-container {
+    @apply relative overflow-hidden bg-secondary rounded-2xl ring-1 ring-border/20;
+  }
+
+  .image-container img {
+    @apply transition-transform duration-300 ease-out;
+  }
+
+  .image-container:hover img {
+    @apply scale-110;
+  }
+
+  /* Enhanced button styling */
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-semibold text-primary-foreground bg-primary hover:bg-primary/90 transition-all duration-200 active:scale-95 shadow-md hover:shadow-lg;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl font-semibold text-secondary-foreground bg-secondary hover:bg-secondary/80 transition-all duration-200 active:scale-95;
+  }
+
+  /* Price styling */
+  .price-display {
+    @apply font-bold text-primary text-lg;
+  }
+
+  .price-original {
+    @apply line-through text-muted-foreground text-sm;
+  }
+
+  /* Bottom navigation item */
+  .nav-item {
+    @apply flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-xl transition-colors touch-target;
+  }
+  .nav-item.active {
+    @apply text-primary bg-primary/10;
+  }
+
+  /* Status badge styles */
+  .status-pending {
+    @apply bg-warning/15 text-warning;
+  }
+  .status-preparing {
+    @apply bg-accent/15 text-accent-foreground;
+  }
+  .status-delivery {
+    @apply bg-primary/15 text-primary;
+  }
+  .status-delivered {
+    @apply bg-success/15 text-success;
+  }
+
+  /* Section header with accent line */
+  .section-header {
+    @apply flex items-center gap-3 mb-4;
+  }
+
+  .section-header::before {
+    @apply content-[''] w-1 h-6 bg-primary rounded-full;
+  }
+
+  /* Gradient overlay for category cards */
+  .gradient-overlay {
+    @apply absolute inset-0 bg-gradient-to-t from-foreground/90 via-foreground/40 to-transparent;
+  }
+
+  /* Card elevation on hover */
+  .card-elevated:hover {
+    @apply shadow-card-hover;
+  }
+
+  /* Smooth link transitions */
+  a {
+    @apply transition-colors duration-200;
+  }
+
+  /* Focus states for accessibility */
+  button:focus-visible,
+  a:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+

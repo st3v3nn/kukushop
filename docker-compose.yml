@@ -1,0 +1,47 @@
+version: '3.8'
+services:
+  frontend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      # Use the external Postgres DB credentials (mike_admin).
+      # Dollar sign in password is percent-encoded as %24 to avoid expansion.
+      - DATABASE_URL=postgresql://mike_admin:Mwa%240152@localhost:54812/speedy_bites
+      - TOKEN_SECRET=your_secret_key_at_least_32_chars_long
+      - MPESA_CONSUMER_KEY
+      - MPESA_CONSUMER_SECRET
+      - MPESA_SHORTCODE
+      - MPESA_PASSKEY
+      - MPESA_CALLBACK_BASE
+    depends_on:
+      - db
+    # Temporarily use host networking so the server container can reach
+    # Postgres bound to the host's localhost:54812. This simplifies access
+    # while we finish setup; remove or change for a production setup.
+    network_mode: "host"
+    ports:
+      - "4000:4000"
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: speedy_admin
+      POSTGRES_PASSWORD: secure_password_here
+      POSTGRES_DB: speedy_bites
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+
+volumes:
+  db_data:
