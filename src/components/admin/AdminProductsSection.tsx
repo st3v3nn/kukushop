@@ -203,7 +203,7 @@ export const AdminProductsSection = () => {
           {filteredProducts.map(product => (
             <Card key={product.id} className="group overflow-hidden hover:shadow-lg transition-shadow">
               <div className="relative w-full h-48 overflow-hidden bg-gray-100">
-                {product.image_url ? (
+                {product.image_url && (
                   <img
                     src={getImageURL(product.image_url)}
                     alt={product.name}

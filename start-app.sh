@@ -42,8 +42,8 @@ start_app() {
 
     # 4. Start Frontend (ensure frontend knows backend API URL)
     echo -e "${YELLOW}🌐 Starting Frontend UI (Port $VITE_PORT)...${NC}"
-    # Set VITE_API_URL so the dev frontend calls the backend directly
-    nohup env PORT=$VITE_PORT VITE_API_URL="http://localhost:$API_PORT/api" npm run dev > frontend.log 2>&1 &
+    # Set PORT so the dev frontend calls the backend via proxy (/api)
+    nohup env PORT=$VITE_PORT npm run dev > frontend.log 2>&1 &
 
     echo ""
     echo -e "${GREEN}✅ Kuku ni Sisi is running!${NC}"

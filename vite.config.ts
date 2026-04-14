@@ -15,6 +15,13 @@ export default defineConfig(({ mode }) => {
         // ensure the HMR client connects to the same port the server is listening on
         clientPort: devPort,
       },
+      proxy: {
+        '/api': {
+          target: `http://127.0.0.1:4000`,
+          changeOrigin: true,
+          secure: false,
+        },
+      },
     },
     plugins: [react(), mode === 'development' && componentTagger()].filter(Boolean),
     resolve: {
