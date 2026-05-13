@@ -1,5 +1,5 @@
 import { Trash2 } from 'lucide-react';
-import { getImageURL } from '@/lib/api';
+import { getCartItemVariantLabels, getImageURL } from '@/lib/api';
 import { QuantitySelector } from '@/components/ui/QuantitySelector';
 import { formatPrice } from '@/components/ui/PriceDisplay';
 import { useCart } from '@/contexts/CartContext';
@@ -13,6 +13,8 @@ interface CartItemProps {
 
 export const CartItemCard = ({ item, className }: CartItemProps) => {
   const { updateQuantity, removeItem } = useCart();
+  const selectedVariants = getCartItemVariantLabels(item.options);
+  const selectedVariant = selectedVariants.join(', ');
 
   return (
     <div className={cn(
@@ -32,9 +34,17 @@ export const CartItemCard = ({ item, className }: CartItemProps) => {
         <div className="flex items-start justify-between gap-2">
           <div>
             <h3 className="font-semibold text-sm line-clamp-1">{item.menuItem.name}</h3>
+            {selectedVariant && (
+              <p className="mt-1 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                {selectedVariant}
+              </p>
+            )}
             {item.options && Object.keys(item.options).length > 0 && (
               <p className="text-xs text-muted-foreground mt-0.5">
-                {Object.values(item.options).flat().join(', ')}
+                {Object.values(item.options)
+                  .flat()
+                  .filter((value) => value !== selectedVariant)
+                  .join(', ')}
               </p>
             )}
           </div>

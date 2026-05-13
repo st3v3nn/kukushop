@@ -1,24 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Minus, Plus, Heart, Share2, Star } from 'lucide-react';
+import { Heart, Share2, Star } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { PriceDisplay, formatPrice } from '@/components/ui/PriceDisplay';
+import { QuantitySelector } from '@/components/ui/QuantitySelector';
 import { useCart } from '@/contexts/CartContext';
 import { cn } from '@/lib/utils';
 import { getImageURL } from '@/lib/api';
+import { getProductVariants, getSelectedProductVariant, resolveMenuItemUnitPrice } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import type { MenuItem } from '@/lib/api';
 import { toast } from 'sonner';
 
-// Optional local interface for component-specific properties
-interface MealDetailsItem extends MenuItem { }
-
 export const MealDetailsPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { addItem } = useCart();
+  const { addItem, addItems } = useCart();
   const { user } = useAuth();
 
   const [quantity, setQuantity] = useState(1);
@@ -26,40 +25,44 @@ export const MealDetailsPage = () => {
   const [item, setItem] = useState<MenuItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFavoriteLoading, setIsFavoriteLoading] = useState(false);
+  const [variantQuantities, setVariantQuantities] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    const loadMenuItem = async () => {
+      try {
+        if (!id) return;
+        const data = await api.getMenuItem(id);
+        setItem(data as MenuItem);
+      } catch (error) {
+        console.error('Error fetching menu item:', error);
+        toast.error('Failed to load item');
+        navigate('/menu');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     if (id) {
-      fetchMenuItem();
+      void loadMenuItem();
       if (user) {
-        checkIfFavorite();
+        // TODO: Implement favorites API endpoint
+        // For now, favorites are stored in local state only
       }
     }
-  }, [id, user]);
-
-  const fetchMenuItem = async () => {
-    try {
-      if (!id) return;
-      const data = await api.getMenuItem(id);
-      setItem(data as MenuItem);
-    } catch (error) {
-      console.error('Error fetching menu item:', error);
-      toast.error('Failed to load item');
-      navigate('/menu');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const checkIfFavorite = async () => {
-    // TODO: Implement favorites API endpoint
-    // For now, favorites are stored in local state only
-  };
+  }, [id, navigate, user]);
 
   const toggleFavorite = async () => {
     // Local state toggle for favorites - full API implementation to follow
     setIsFavorite(!isFavorite);
     toast.success(isFavorite ? 'Removed from favorites' : 'Added to favorites');
   };
+
+  useEffect(() => {
+    // Reset quantities when item change (standard/base becomes qty 1 by default)
+    if (item) {
+      setVariantQuantities({ 'Standard / Base': 1 });
+    }
+  }, [item]);
 
   if (isLoading) {
     return (
@@ -89,12 +92,41 @@ export const MealDetailsPage = () => {
     );
   }
 
-  const handleAddToCart = () => {
-    addItem(item, quantity);
-    toast.success(`${quantity}x ${item.name} added to cart!`);
+  const productVariants = getProductVariants(item);
+
+  const handleAddAll = () => {
+    const selections = Object.entries(variantQuantities)
+      .filter(([_, qty]) => qty > 0)
+      .map(([name, qty]) => ({
+        variant: name === 'Standard / Base' ? undefined : name,
+        quantity: qty
+      }));
+
+    if (selections.length === 0) {
+      toast.error('Please select at least one item');
+      return;
+    }
+
+    addItems(item, selections);
+    
+    const totalQty = selections.reduce((sum, s) => sum + s.quantity, 0);
+    toast.success(`Added ${totalQty} item${totalQty > 1 ? 's' : ''} to cart!`);
   };
 
-  const totalPrice = item.price * quantity;
+  const allDisplayVariants = [
+    { id: 'base', name: 'Standard / Base', price: item.price },
+    ...productVariants
+  ];
+
+  const totalPrice = allDisplayVariants.reduce((sum, v) => sum + ((Number(v.price) || 0) * (variantQuantities[v.name] || 0)), 0);
+  const totalSelectedCount = Object.values(variantQuantities).reduce((sum, q) => sum + q, 0);
+
+  const updateVariantQuantity = (name: string, qty: number) => {
+    setVariantQuantities(prev => ({
+      ...prev,
+      [name]: Math.max(0, qty)
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24 lg:min-h-0 lg:bg-transparent lg:pb-0">
@@ -164,6 +196,36 @@ export const MealDetailsPage = () => {
           className="mb-4"
         />
 
+        <div className="mb-8 p-1">
+          <h3 className="mb-4 text-lg font-bold">Selection Options</h3>
+          <div className="space-y-4">
+            {allDisplayVariants.map((v) => (
+              <div
+                key={v.id}
+                className={cn(
+                  "flex items-center justify-between rounded-2xl border bg-card p-4 shadow-sm transition-all",
+                  variantQuantities[v.name] > 0 ? "border-primary/50 bg-primary/5" : "border-border"
+                )}
+              >
+                <div className="flex-1">
+                  <h4 className="font-bold">{v.name}</h4>
+                  <p className="text-xl font-black text-primary">{formatPrice(v.price)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <QuantitySelector 
+                    quantity={variantQuantities[v.name] || 0} 
+                    onChange={(qty) => updateVariantQuantity(v.name, qty)} 
+                    size="sm"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Customize your order by selecting one or more variants.
+          </p>
+        </div>
+
         {/* Description */}
         <div className="mb-6">
           <h3 className="font-semibold mb-2">Description</h3>
@@ -179,47 +241,23 @@ export const MealDetailsPage = () => {
           </div>
         )}
 
-        {/* Quantity Selector */}
-        {item.isAvailable && (
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3">Quantity</h3>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center rounded-full bg-secondary">
-                <button
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  disabled={quantity <= 1}
-                  className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-muted disabled:opacity-40"
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
-                <span className="w-12 text-center font-semibold">{quantity}</span>
-                <button
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-              <span className="text-sm text-muted-foreground">No maximum order limit</span>
-            </div>
-          </div>
-        )}
+        {/* Description section removed quantity duplicate */}
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-card px-4 py-4 shadow-bottom-nav safe-bottom">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card px-4 py-4 shadow-bottom-nav safe-bottom">
         <div className="flex items-center gap-4">
           <div className="flex-1">
-            <span className="text-sm text-muted-foreground">Total</span>
-            <p className="text-xl font-bold">{formatPrice(totalPrice)}</p>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Selection Total</span>
+            <p className="text-xl font-black text-foreground">{formatPrice(totalPrice)}</p>
           </div>
           <Button
-            onClick={handleAddToCart}
-            disabled={!item.isAvailable}
-            className="h-14 flex-1 text-base font-semibold"
+            onClick={handleAddAll}
+            disabled={!item.isAvailable || totalSelectedCount === 0}
+            className="h-14 flex-[2] rounded-2xl text-base font-bold shadow-lg shadow-primary/20"
             size="lg"
           >
-            Add to Cart
+            Add {totalSelectedCount > 0 ? `${totalSelectedCount} Selected` : 'to Cart'}
           </Button>
         </div>
       </div>

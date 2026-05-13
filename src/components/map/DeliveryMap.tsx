@@ -78,8 +78,8 @@ const FitBounds = ({ locations }: { locations: Location[] }) => {
   return null;
 };
 
-// Nairobi default center
-const NAIROBI_CENTER: Location = { lat: -1.2921, lng: 36.8219 };
+// Nakuru default center
+const Nakuru_CENTER: Location = { lat: -1.2921, lng: 36.8219 };
 
 export const DeliveryMap = ({
   restaurantLocation = { lat: -1.2864, lng: 36.8172, label: 'Kuku ni Sisi Restaurant' },
@@ -90,7 +90,7 @@ export const DeliveryMap = ({
   zoom = 14,
   interactive = true,
 }: DeliveryMapProps) => {
-  const center = riderLocation || restaurantLocation || NAIROBI_CENTER;
+  const center = riderLocation || restaurantLocation || Nakuru_CENTER;
 
   const allLocations = [
     restaurantLocation,

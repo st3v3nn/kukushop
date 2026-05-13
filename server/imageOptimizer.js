@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
+const config = require('./config');
 
 const IMAGE_CONFIG = {
   products: {
@@ -32,7 +33,7 @@ const IMAGE_CONFIG = {
  */
 async function optimizeImage(imageBuffer, type, filename) {
   const config = IMAGE_CONFIG[type] || IMAGE_CONFIG.products;
-  const uploadDir = path.join(__dirname, 'uploads', type);
+  const uploadDir = path.join(require('./config').upload.directory, type);
   
   // Ensure directory exists
   await fs.mkdir(uploadDir, { recursive: true });
@@ -154,8 +155,11 @@ function calculateDimensions(width, height, maxWidth, maxHeight) {
  * Delete image files
  */
 async function deleteImages(type, filename) {
-  const uploadDir = path.join(__dirname, 'uploads', type);
-  const baseFileName = filename.replace(/\.[^/.]+$/, '');
+  const uploadDir = path.join(config.upload.directory, type);
+  const fileWithoutExt = filename.replace(/\.[^/.]+$/, '');
+  const baseFileName = fileWithoutExt.endsWith(`_${type}`)
+    ? fileWithoutExt.slice(0, -(`_${type}`.length))
+    : fileWithoutExt.replace(/_thumb$/, '');
   
   const filesToDelete = [
     `${baseFileName}_${type}.webp`,

@@ -46,7 +46,7 @@ export const QuantitySelector = ({
 
   return (
     <div className={cn(
-      'flex items-center rounded-full bg-secondary',
+      'flex items-center rounded-full border border-border/80 bg-card text-foreground shadow-sm',
       sizeClasses[size],
       className
     )}>
@@ -54,11 +54,11 @@ export const QuantitySelector = ({
         onClick={handleDecrease}
         disabled={!canDecrease && !showDelete}
         className={cn(
-          'flex items-center justify-center rounded-full transition-all active:scale-95',
+          'flex items-center justify-center rounded-full text-foreground transition-all active:scale-95',
           buttonSizes[size],
           isAtMin && showDelete 
-            ? 'bg-destructive/10 text-destructive' 
-            : 'hover:bg-muted',
+            ? 'bg-destructive/10 text-destructive hover:bg-destructive/15' 
+            : 'bg-muted hover:bg-muted/80',
           !canDecrease && !showDelete && 'opacity-40'
         )}
         aria-label={isAtMin && showDelete ? 'Remove item' : 'Decrease quantity'}
@@ -70,7 +70,7 @@ export const QuantitySelector = ({
         )}
       </button>
       
-      <span className="min-w-[2rem] text-center font-semibold">
+      <span className="min-w-[2rem] text-center font-semibold text-foreground">
         {quantity}
       </span>
       
@@ -78,7 +78,7 @@ export const QuantitySelector = ({
         onClick={() => canIncrease && onChange(quantity + 1)}
         disabled={!canIncrease}
         className={cn(
-          'flex items-center justify-center rounded-full bg-primary text-primary-foreground transition-all active:scale-95',
+          'flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all active:scale-95 hover:bg-primary/90',
           buttonSizes[size],
           !canIncrease && 'opacity-40'
         )}

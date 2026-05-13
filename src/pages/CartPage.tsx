@@ -4,6 +4,7 @@ import { Header } from '@/components/layout/Header';
 import { CartItemCard } from '@/components/cart/CartItem';
 import { CartSummary } from '@/components/cart/CartSummary';
 import { EmptyCart } from '@/components/ui/EmptyState';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { formatPrice } from '@/components/ui/PriceDisplay';
@@ -84,6 +85,8 @@ export const CartPage = () => {
           Checkout • {formatPrice(cart.total)}
         </Button>
       </div>
+
+      <ScrollToTopButton />
     </div>
   );
 };

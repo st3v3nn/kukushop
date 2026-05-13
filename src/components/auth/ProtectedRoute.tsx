@@ -29,7 +29,7 @@ export const ProtectedRoute = ({
             } else if (allowedRoles && user && !allowedRoles.includes(user.role as any)) {
                 // Redirect if role is not allowed
                 if (user.role === 'admin') navigate('/admin/dashboard', { replace: true });
-                else if (user.role === 'rider') navigate('/rider/dashboard', { replace: true });
+                else if (user.role === 'rider') navigate('/rider', { replace: true });
                 else navigate('/', { replace: true });
             }
         }

@@ -78,12 +78,12 @@ export const OrderTrackingPage = () => {
         pollOrderPaymentStatus(order.id);
       } else {
         setIsPaymentProcessing(false);
-        toast.error('Failed to initiate MPesa STK push.');
+        toast.error(stkResponse.error || 'Failed to initiate MPesa STK push.');
       }
     } catch (err: any) {
       console.error('STK Error:', err);
       setIsPaymentProcessing(false);
-      toast.error(err.message || 'Failed to initiate MPesa payment.');
+      toast.error(err instanceof Error ? err.message : 'We could not start the M-Pesa prompt right now. Please try again shortly.');
     }
   };
 
@@ -135,13 +135,13 @@ export const OrderTrackingPage = () => {
 
   // Simulate notification when status changes
   useEffect(() => {
-    if (order?.status === 'on_the_way' && riderAssignment?.rider) {
+    if (order?.status === 'on_the_way' && order?.driver) {
       toast.info('🛵 Your order is on the way!', {
-        description: `${riderAssignment.rider.name} is heading to your location`,
+        description: `${order.driver.name} is heading to your location`,
         duration: 5000,
       });
     }
-  }, [order?.status, riderAssignment?.rider]);
+  }, [order?.status, order?.driver]);
 
   if (isLoading) {
     return (
@@ -171,7 +171,8 @@ export const OrderTrackingPage = () => {
     );
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined | null) => {
+    if (!dateString) return '—';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-KE', {
       day: 'numeric',
@@ -242,8 +243,8 @@ export const OrderTrackingPage = () => {
           )}
         </section>
 
-        {/* Rider Info (if on the way) */}
-        {order.status === 'on_the_way' && riderAssignment?.rider && (
+        {/* Rider Info */}
+        {isActive && order.driver && (
           <section className="rounded-xl bg-card p-4 shadow-card">
             <h3 className="font-semibold mb-4">Your Rider</h3>
             <div className="flex items-center gap-4">
@@ -251,11 +252,11 @@ export const OrderTrackingPage = () => {
                 <User className="h-6 w-6 text-primary" />
               </div>
               <div className="flex-1">
-                <p className="font-medium">{riderAssignment.rider.name}</p>
-                <p className="text-sm text-muted-foreground">{riderAssignment.rider.phone}</p>
+                <p className="font-medium">{order.driver.name}</p>
+                <p className="text-sm text-muted-foreground">{order.driver.phone}</p>
               </div>
               <a
-                href={`tel:${riderAssignment.rider.phone}`}
+                href={`tel:${order.driver.phone}`}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-success text-success-foreground"
               >
                 <Phone className="h-5 w-5" />

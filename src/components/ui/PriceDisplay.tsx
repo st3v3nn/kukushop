@@ -8,7 +8,8 @@ interface PriceDisplayProps {
 }
 
 // Format price in Kenyan Shillings
-export const formatPrice = (price: number): string => {
+export const formatPrice = (price: number | null | undefined): string => {
+  if (price == null) return 'KES 0';
   return `KES ${price.toLocaleString()}`;
 };
 

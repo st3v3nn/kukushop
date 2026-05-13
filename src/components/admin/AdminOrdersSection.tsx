@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Package, Bike, Check, X, Clock, MapPin, Phone, User, AlertCircle, Loader2, CreditCard } from 'lucide-react';
+import { Package, Bike, Clock, MapPin, Phone, User, Loader2, CreditCard, Trash2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 export const AdminOrdersSection = () => {
     const [orders, setOrders] = useState<any[]>([]);
@@ -14,6 +15,8 @@ export const AdminOrdersSection = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState<any>(null);
     const [isAssigning, setIsAssigning] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     const fetchOrdersAndRiders = async () => {
         try {
@@ -60,18 +63,60 @@ export const AdminOrdersSection = () => {
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'pending': return 'bg-yellow-500/10 text-yellow-600';
-            case 'preparing': return 'bg-blue-500/10 text-blue-600';
-            case 'on_the_way': return 'bg-purple-500/10 text-purple-600';
-            case 'arrived': return 'bg-indigo-500/10 text-indigo-600';
-            case 'delivered': return 'bg-green-500/10 text-green-600';
-            case 'cancelled': return 'bg-red-500/10 text-red-600';
-            case 'created': return 'bg-orange-500/10 text-orange-600';
-            default: return 'bg-gray-500/10 text-gray-600';
+    const handleClearAllOrders = async () => {
+        if (!window.confirm('⚠️ Are you sure? This will permanently delete ALL orders and cannot be undone.')) {
+            return;
+        }
+
+        setIsClearing(true);
+        try {
+            await api.clearAllOrdersAdmin();
+            toast.success('All orders cleared successfully');
+            setOrders([]);
+        } catch (err) {
+            console.error('Failed to clear orders', err);
+            toast.error('Failed to clear orders');
+        } finally {
+            setIsClearing(false);
         }
     };
+
+    const handleExportTransactions = async () => {
+        setIsExporting(true);
+        try {
+            const blob = await api.exportTransactions();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            toast.success('Transactions exported successfully');
+        } catch (err) {
+            console.error('Failed to export transactions', err);
+            toast.error('Failed to export transactions');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'pending': return 'border-yellow-300 bg-yellow-50 text-yellow-900 dark:border-yellow-500/30 dark:bg-yellow-500/10 dark:text-yellow-100';
+            case 'preparing': return 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-100';
+            case 'on_the_way': return 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100';
+            case 'arrived': return 'border-indigo-300 bg-indigo-50 text-indigo-900 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100';
+            case 'delivered': return 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100';
+            case 'cancelled': return 'border-red-300 bg-red-50 text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100';
+            case 'created': return 'border-orange-300 bg-orange-50 text-orange-900 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-100';
+            default: return 'border-border bg-background text-foreground';
+        }
+    };
+
+    const getStatusLabel = (status: string) =>
+        status === 'created' ? 'Pending Payment' : status.replace(/_/g, ' ');
 
     if (isLoading && orders.length === 0) {
         return (
@@ -83,11 +128,33 @@ export const AdminOrdersSection = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <h2 className="text-2xl font-bold">Manage Orders</h2>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>Updates every 10s</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        <span>Updates every 10s</span>
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportTransactions}
+                        disabled={isExporting}
+                        className="gap-2"
+                    >
+                        <Download className="h-4 w-4" />
+                        {isExporting ? 'Exporting...' : 'Export'}
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleClearAllOrders}
+                        disabled={isClearing || orders.length === 0}
+                        className="gap-2"
+                    >
+                        <Trash2 className="h-4 w-4" />
+                        Clear All Orders
+                    </Button>
                 </div>
             </div>
 
@@ -107,8 +174,8 @@ export const AdminOrdersSection = () => {
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-3">
                                             <span className="font-bold text-lg">#{order.order_number || order.id.slice(0, 8)}</span>
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                                                {order.status === 'created' ? 'PENDING PAYMENT' : order.status.replace('_', ' ').toUpperCase()}
+                                            <span className={cn('rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide', getStatusColor(order.status))}>
+                                                {getStatusLabel(order.status)}
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -118,7 +185,7 @@ export const AdminOrdersSection = () => {
                                             </span>
                                             <span className="flex items-center gap-1">
                                                 <Clock className="h-3 w-3" />
-                                                {new Date(order.created_at || order.createdAt).toLocaleTimeString()}
+                                                {order.created_at || order.createdAt ? new Date(order.created_at || order.createdAt).toLocaleTimeString() : '—'}
                                             </span>
                                         </div>
                                     </div>
@@ -133,7 +200,7 @@ export const AdminOrdersSection = () => {
                                                     className="flex items-center gap-2"
                                                 >
                                                     <Bike className="h-4 w-4" />
-                                                    {order.rider_name ? `Assigned: ${order.rider_name}` : 'Assign Rider'}
+                                                    {order.rider_name ? `Assigned: ${order.rider_name} (${order.rider_phone || 'N/A'})` : 'Assign Rider'}
                                                 </Button>
                                             </DialogTrigger>
                                             <DialogContent>
@@ -172,8 +239,8 @@ export const AdminOrdersSection = () => {
                                             value={order.status}
                                             onValueChange={(val) => handleUpdateStatus(order.id, val)}
                                         >
-                                            <SelectTrigger className="w-[140px] h-9">
-                                                <SelectValue />
+                                            <SelectTrigger className={cn('h-10 w-[160px] border-2 font-semibold capitalize', getStatusColor(order.status))}>
+                                                <SelectValue>{getStatusLabel(order.status)}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="created">Pending Payment</SelectItem>

@@ -27,7 +27,20 @@ services:
       context: ./server
     restart: unless-stopped
     env_file:
-      - ./server/.env.prod
+      - ./.env
+    environment:
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE}
+      MPESA_BUSINESS_SHORTCODE: ${MPESA_BUSINESS_SHORTCODE}
+      MPESA_PASSKEY: ${MPESA_PASSKEY}
+      MPESA_CALLBACK_BASE: ${MPESA_CALLBACK_BASE}
+      MPESA_SANDBOX: ${MPESA_SANDBOX}
+      MPESA_PARTYB: ${MPESA_PARTYB}
+      MPESA_TRANSACTION_TYPE: ${MPESA_TRANSACTION_TYPE}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${UPLOAD_DIR:-/var/lib/kukunisisi/uploads}:${UPLOAD_DIR:-/var/lib/kukunisisi/uploads}:rw
     expose:
       - "4000"
     depends_on:

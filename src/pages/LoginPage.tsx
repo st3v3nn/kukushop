@@ -33,7 +33,7 @@ export const LoginPage = () => {
       if (user.role === 'admin') {
         navigate('/admin/dashboard', { replace: true });
       } else if (user.role === 'rider') {
-        navigate('/rider/dashboard', { replace: true });
+        navigate('/rider', { replace: true });
       } else {
         navigate('/', { replace: true });
       }
@@ -111,7 +111,7 @@ export const LoginPage = () => {
           navigate('/admin/dashboard', { replace: true });
         } else if (loggedUser?.role === 'rider') {
           toast.success('Welcome back, Rider!');
-          navigate('/rider/dashboard', { replace: true });
+          navigate('/rider', { replace: true });
         } else {
           toast.success('Welcome back!');
           navigate('/', { replace: true });

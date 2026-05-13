@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { api } from '@/lib/api';
 import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
+import { playNotificationTune } from '@/lib/sound';
 
 export interface Notification {
     id: string;
@@ -32,19 +33,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const { user } = useAuth();
-
-    // Sound effect for notifications
-    const playNotificationSound = () => {
-        try {
-            const audio = new Audio('/assets/sounds/chicken.mp3');
-            audio.volume = 0.5;
-            audio.play().catch(e => console.warn('Audio play failed:', e));
-        } catch (error) {
-            console.warn('Failed to play notification sound:', error);
-        }
-    };
-
-
 
     const fetchNotifications = useCallback(async () => {
         if (!user) {
@@ -114,7 +102,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             });
 
             // Play sound
-            playNotificationSound();
+            playNotificationTune();
 
             return [newNotification, ...prev];
         });

@@ -4,6 +4,7 @@ import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { FoodCard } from '@/components/food/FoodCard';
 import { StickyCartButton } from '@/components/cart/StickyCartButton';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 import { EmptySearch } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ export const MenuPage = () => {
   const [loading, setLoading] = useState(true);
 
   const activeCategory = searchParams.get('category') || 'all';
+  const activeTag = searchParams.get('tag') || 'all';
 
   useEffect(() => {
     const fetchData = async () => {
@@ -41,6 +43,16 @@ export const MenuPage = () => {
     fetchData();
   }, []);
 
+  const availableTags = useMemo(() => {
+    const tags = new Set<string>();
+    menuItems.forEach((item) => {
+      (item.tags || []).forEach((tag) => {
+        if (tag) tags.add(tag);
+      });
+    });
+    return Array.from(tags).sort((a, b) => a.localeCompare(b));
+  }, [menuItems]);
+
   const filteredItems = useMemo(() => {
     let items = menuItems;
 
@@ -49,17 +61,22 @@ export const MenuPage = () => {
       items = items.filter(item => item.categoryId === activeCategory);
     }
 
+    if (activeTag !== 'all') {
+      items = items.filter((item) => (item.tags || []).includes(activeTag));
+    }
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       items = items.filter(item =>
         item.name.toLowerCase().includes(query) ||
-        item.description.toLowerCase().includes(query)
+        item.description.toLowerCase().includes(query) ||
+        (item.tags || []).some((tag) => tag.includes(query))
       );
     }
 
     return items;
-  }, [activeCategory, searchQuery, menuItems]);
+  }, [activeCategory, activeTag, searchQuery, menuItems]);
 
   const handleCategoryChange = (categoryId: string) => {
     if (categoryId === 'all') {
@@ -68,6 +85,16 @@ export const MenuPage = () => {
       searchParams.set('category', categoryId);
     }
     setSearchParams(searchParams);
+  };
+
+  const handleTagChange = (tag: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (tag === 'all') {
+      nextParams.delete('tag');
+    } else {
+      nextParams.set('tag', tag);
+    }
+    setSearchParams(nextParams);
   };
 
   const clearSearch = () => {
@@ -138,6 +165,39 @@ export const MenuPage = () => {
           ))}
         </div>
 
+        {availableTags.length > 0 && (
+          <div className="mb-5">
+            <p className="mb-2 text-sm font-medium text-muted-foreground">Filter by tag</p>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => handleTagChange('all')}
+                className={cn(
+                  'flex-shrink-0 px-4 py-2 rounded-full font-medium text-sm transition-colors',
+                  activeTag === 'all'
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'bg-card text-muted-foreground shadow-card'
+                )}
+              >
+                All tags
+              </button>
+              {availableTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => handleTagChange(tag)}
+                  className={cn(
+                    'flex-shrink-0 px-4 py-2 rounded-full font-medium text-sm capitalize transition-colors',
+                    activeTag === tag
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'bg-card text-muted-foreground shadow-card'
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Results */}
         <div>
           {filteredItems.length === 0 ? (
@@ -157,6 +217,7 @@ export const MenuPage = () => {
         </div>
       </main>
 
+      <ScrollToTopButton />
       <StickyCartButton />
     </div>
   );

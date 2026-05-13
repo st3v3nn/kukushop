@@ -95,6 +95,7 @@ const router = createBrowserRouter(
 
     // Rider Routes
     { path: "/rider", element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute> },
+    { path: "/rider/dashboard", element: <ProtectedRoute allowedRoles={['rider']}><RiderDashboardPage /></ProtectedRoute> },
 
     // Admin Routes
     { path: "/admin", element: <ProtectedRoute allowedRoles={['admin']}><AdminDashboardPage /></ProtectedRoute> },
@@ -129,6 +130,8 @@ const App = () => {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
+    armSplashToneOnFirstInteraction();
+
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 1800);
@@ -175,6 +178,7 @@ export default App;
 // SSE listener component
 import React from 'react';
 import { API_BASE_URL } from '@/lib/api';
+import { armSplashToneOnFirstInteraction, playNotificationTune } from '@/lib/sound';
 
 import { useNotifications } from '@/contexts/NotificationContext';
 
@@ -185,6 +189,7 @@ function SseListener() {
   React.useEffect(() => {
     let es: EventSource | null = null;
     const token = localStorage.getItem('speedy_bites_auth_token');
+    if (!token) return;
     const base = API_BASE_URL.replace(/\/api$/, '');
     const streamUrl = token ? `${base}/api/stream?token=${encodeURIComponent(token)}` : `${base}/api/stream`;
     try {
@@ -238,11 +243,7 @@ function SseListener() {
             description: payload.message,
           });
           // Play sound also handled via addNotification usually, but for broadcast we do it here
-          try {
-            const audio = new Audio('/assets/sounds/chicken.mp3');
-            audio.volume = 0.5;
-            audio.play().catch(() => { });
-          } catch (e) { }
+          playNotificationTune();
 
           // Trigger a refresh of the notifications list
           window.dispatchEvent(new CustomEvent('notifications-refresh'));

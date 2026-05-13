@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FoodCard } from '@/components/food/FoodCard';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -112,6 +113,8 @@ export const FavoritesPage = () => {
           </div>
         )}
       </main>
+
+      <ScrollToTopButton />
     </div>
   );
 };

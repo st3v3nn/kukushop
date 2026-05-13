@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, CreditCard, Banknote, ChevronRight, Edit2, Loader2 } from 'lucide-react';
+import { MapPin, CreditCard, Banknote, Edit2, Loader2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { CartSummary } from '@/components/cart/CartSummary';
 import { Button } from '@/components/ui/button';
@@ -12,10 +12,14 @@ import { formatPrice } from '@/components/ui/PriceDisplay';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { api, apiFetch, CreateOrderData } from '@/lib/api';
+import { api, apiFetch, CreateOrderData, getCartItemVariantLabels } from '@/lib/api';
 
 
 type PaymentMethod = 'mpesa' | 'cash';
+type StkResponse = {
+  success: boolean;
+  error?: string;
+};
 
 export const CheckoutPage = () => {
   const navigate = useNavigate();
@@ -27,7 +31,7 @@ export const CheckoutPage = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mpesa');
   const [address, setAddress] = useState({
     street: '',
-    city: 'Nairobi',
+    city: 'Nakuru',
     landmark: '',
     lat: undefined as number | undefined,
     lng: undefined as number | undefined,
@@ -35,6 +39,8 @@ export const CheckoutPage = () => {
   const [isLocating, setIsLocating] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
   const [notes, setNotes] = useState('');
+  const fieldClassName = 'mt-1 h-11 border-border/80 bg-background text-foreground placeholder:text-muted-foreground/80';
+  const fieldLabelClassName = 'text-sm font-semibold text-foreground';
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -104,7 +110,7 @@ export const CheckoutPage = () => {
       return;
     }
 
-    if (!address.street.trim()) {
+    if (!address?.street?.trim()) {
       toast.error('Please enter your delivery address');
       return;
     }
@@ -130,20 +136,22 @@ export const CheckoutPage = () => {
         discount: cart.discount,
         total: cart.total,
         delivery_address: {
-          street: address.street.trim(),
-          city: address.city.trim(),
-          landmark: address.landmark.trim() || null,
-          lat: address.lat,
-          lng: address.lng,
+          street: address?.street?.trim() || '',
+          city: address?.city?.trim() || '',
+          landmark: address?.landmark?.trim() || null,
+          lat: address?.lat || 0,
+          lng: address?.lng || 0,
         },
         notes: notes.trim() || null,
         payment_method: paymentMethod,
         phone: phoneNumber.trim(),
         items: cart.items.map(item => ({
           menu_item_id: item.menuItem.id,
-          name: item.menuItem.name,
+          name: getCartItemVariantLabels(item.options).length > 0
+            ? `${item.menuItem.name} (${getCartItemVariantLabels(item.options).join(', ')})`
+            : item.menuItem.name,
           quantity: item.quantity,
-          unit_price: item.menuItem.price,
+          unit_price: item.unitPrice,
           total_price: item.totalPrice,
           notes: Array.isArray(item.options?.notes) ? item.options?.notes.join(', ') : (item.options?.notes as string) || null,
         })),
@@ -158,7 +166,7 @@ export const CheckoutPage = () => {
           setIsPaymentProcessing(true);
           try {
             // Initiate STK Push
-            const stkResponse = await apiFetch<any>('/mpesa/stk', {
+            const stkResponse = await apiFetch<StkResponse>('/mpesa/stk', {
               method: 'POST',
               body: JSON.stringify({
                 orderId: response.orderId,
@@ -174,13 +182,13 @@ export const CheckoutPage = () => {
               pollOrderPaymentStatus(response.orderId);
             } else {
               setIsPaymentProcessing(false);
-              toast.error('Failed to initiate MPesa STK push. You can try again from order history.');
+              toast.error(stkResponse.error || 'Failed to initiate MPesa STK push. You can try again from order history.');
               navigate(`/order-confirmation/${response.orderId}`);
             }
-          } catch (stkErr: any) {
+          } catch (stkErr: unknown) {
             console.error('STK Error:', stkErr);
             setIsPaymentProcessing(false);
-            toast.error(stkErr.message || 'Failed to initiate MPesa payment. Please check your order history.');
+            toast.error(stkErr instanceof Error ? stkErr.message : 'We could not start the M-Pesa prompt right now. Please try again shortly.');
             navigate(`/order-confirmation/${response.orderId}`);
           }
         } else {
@@ -191,11 +199,21 @@ export const CheckoutPage = () => {
           }, 1500);
         }
       } else {
-        toast.error(response.error || 'Failed to place order');
+        // Check if it's a location error with more details
+        if (response.error && response.allowedCity) {
+          toast.error(`${response.error} - ${response.message || `Please select a delivery address in ${response.allowedCity}.`}`);
+        } else {
+          toast.error(response.error || 'Failed to place order');
+        }
       }
     } catch (error) {
       console.error('Error placing order:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to place order');
+      // Check if error has location information
+      if (error instanceof Error && error.message.includes('only')) {
+        toast.error(error.message);
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Failed to place order');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -234,43 +252,44 @@ export const CheckoutPage = () => {
 
           <div className="space-y-3">
             <div>
-              <Label htmlFor="street">Street Address</Label>
+              <Label htmlFor="street" className={fieldLabelClassName}>Street Address</Label>
               <Input
                 id="street"
-                placeholder="123 Kenyatta Avenue"
+                placeholder="Example: Section 58, Nakuru Nyahururu Highway"
                 value={address.street}
                 onChange={(e) => setAddress(prev => ({ ...prev, street: e.target.value }))}
-                className="mt-1"
+                className={fieldClassName}
               />
             </div>
             <div>
-              <Label htmlFor="city">City</Label>
+              <Label htmlFor="city" className={fieldLabelClassName}>City (Nakuru Only)</Label>
               <Input
                 id="city"
-                value={address.city}
-                onChange={(e) => setAddress(prev => ({ ...prev, city: e.target.value }))}
-                className="mt-1"
+                value="Nakuru"
+                readOnly
+                className="mt-1 h-11 cursor-not-allowed bg-muted/70 text-foreground"
               />
+              <p className="text-xs text-muted-foreground mt-1">We currently only deliver within Nakuru.</p>
             </div>
             <div>
-              <Label htmlFor="landmark">Landmark (Optional)</Label>
+              <Label htmlFor="landmark" className={fieldLabelClassName}>Landmark (Optional)</Label>
               <Input
                 id="landmark"
-                placeholder="Near KICC, opposite bus stop"
+                placeholder="Example: Vineyard, opposite Rubis petrol station"
                 value={address.landmark}
                 onChange={(e) => setAddress(prev => ({ ...prev, landmark: e.target.value }))}
-                className="mt-1"
+                className={fieldClassName}
               />
             </div>
             <div>
-              <Label htmlFor="phone">Phone Number (for MPesa)</Label>
+              <Label htmlFor="phone" className={fieldLabelClassName}>Phone Number (for MPesa)</Label>
               <Input
                 id="phone"
                 type="tel"
-                placeholder="0712345678"
+                placeholder="Example: 07XXXXXXXX"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                className="mt-1"
+                className={fieldClassName}
               />
             </div>
           </div>
@@ -351,6 +370,7 @@ export const CheckoutPage = () => {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
+            className="border-border/80 bg-background text-foreground placeholder:text-muted-foreground/80"
           />
         </section>
 
@@ -369,10 +389,17 @@ export const CheckoutPage = () => {
 
           <div className="mb-4 space-y-2">
             {cart.items.map(item => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {item.quantity}x {item.menuItem.name}
-                </span>
+              <div key={item.id} className="flex justify-between gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground">
+                    {item.quantity}x {item.menuItem.name}
+                  </span>
+                  {getCartItemVariantLabels(item.options).length > 0 && (
+                    <p className="mt-0.5 text-xs font-medium text-foreground">
+                      {getCartItemVariantLabels(item.options).join(', ')}
+                    </p>
+                  )}
+                </div>
                 <span>{formatPrice(item.totalPrice)}</span>
               </div>
             ))}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { api } from '@/lib/api';
@@ -19,7 +19,8 @@ export const AdminCustomersSection = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ email: '', name: '', phone: '' });
+  const [isExporting, setIsExporting] = useState(false);
+  const [form, setForm] = useState({ email: '', name: '', phone: '', password: '' });
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '');
 
   useEffect(() => {
@@ -39,6 +40,27 @@ export const AdminCustomersSection = () => {
     }
   };
 
+  const handleExportUsers = async () => {
+    setIsExporting(true);
+    try {
+      const blob = await api.exportUsers();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `users_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Users exported successfully');
+    } catch (err) {
+      console.error('Failed to export users', err);
+      toast.error('Failed to export users');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   useEffect(() => { fetchCustomers(); }, []);
 
   const handleCreate = async () => {
@@ -46,7 +68,7 @@ export const AdminCustomersSection = () => {
     try {
       await api.createAdminCustomer(form);
       toast.success('Customer created');
-      setForm({ email: '', name: '', phone: '' });
+      setForm({ email: '', name: '', phone: '', password: '' });
       fetchCustomers();
     } catch (err) {
       toast.error('Failed to create customer');
@@ -89,8 +111,17 @@ export const AdminCustomersSection = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h2 className="text-lg font-semibold">Customers ({filteredCustomers.length})</h2>
+        <Button 
+          onClick={handleExportUsers} 
+          disabled={isExporting}
+          variant="outline"
+          className="gap-2"
+        >
+          <Download className="h-4 w-4" />
+          {isExporting ? 'Exporting...' : 'Export CSV'}
+        </Button>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -126,6 +157,10 @@ export const AdminCustomersSection = () => {
             <div>
               <Label>Phone</Label>
               <Input value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Optional custom password" />
             </div>
           </div>
 

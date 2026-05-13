@@ -47,6 +47,12 @@ export const AdminCategoriesSection = () => {
     fetchCategories();
   }, []);
 
+  const handleImageRenderError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget;
+    target.onerror = null;
+    target.src = '/placeholder.svg';
+  };
+
   const fetchCategories = async () => {
     setLoading(true);
     try {
@@ -188,6 +194,7 @@ export const AdminCategoriesSection = () => {
                       src={getImageURL(imagePreview)}
                       alt="Preview"
                       className="h-48 w-48 object-cover rounded-lg"
+                      onError={handleImageRenderError}
                     />
                     <button
                       type="button"
@@ -341,6 +348,7 @@ export const AdminCategoriesSection = () => {
                   src={getImageURL(category.image_url)}
                   alt={category.name}
                   className="w-full h-40 object-cover"
+                  onError={handleImageRenderError}
                 />
               )}
               <CardContent className="pt-4">

@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { Cart, CartItem, MenuItem, CartItemOptions } from '@/lib/api';
 import { api } from '@/lib/api';
+import { getCartItemVariantLabels, resolveMenuItemUnitPrice } from '@/lib/api';
 
 interface CartContextType {
   cart: Cart;
   itemCount: number;
   addItem: (item: MenuItem, quantity?: number, options?: CartItemOptions) => void;
+  addItems: (item: MenuItem, selections: { variant?: string; quantity: number }[]) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   removeItem: (cartItemId: string) => void;
   clearCart: () => void;
@@ -45,7 +47,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [cart]);
 
   const calculateTotals = useCallback((items: CartItem[], discount = 0, promoCode?: string): Cart => {
-    const subtotal = items.reduce((sum, item) => sum + (item.menuItem.price * item.quantity), 0);
+    const subtotal = items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0);
     const deliveryFee = DELIVERY_FEE;
 
     const total = Math.max(0, subtotal + deliveryFee - discount);
@@ -74,28 +76,91 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Update quantity of existing item
         newItems = prev.items.map((cartItem, idx) =>
           idx === existingIndex
-            ? {
-              ...cartItem,
-              quantity: cartItem.quantity + quantity,
-              totalPrice: (cartItem.quantity + quantity) * item.price,
-            }
+            ? (() => {
+              const newQuantity = cartItem.quantity + quantity;
+              const unitPrice = resolveMenuItemUnitPrice(item, {
+                quantity: newQuantity,
+                variantNames: getCartItemVariantLabels(cartItem.options),
+              });
+              return {
+                ...cartItem,
+                quantity: newQuantity,
+                unitPrice,
+                totalPrice: newQuantity * unitPrice,
+              };
+            })()
             : cartItem
         );
       } else {
         // Add new item to cart
+        const unitPrice = resolveMenuItemUnitPrice(item, {
+          quantity,
+          variantNames: getCartItemVariantLabels(options),
+        });
         newItems = [
           ...prev.items,
           {
             id: `${item.id}-${Date.now()}`,
             menuItem: item,
             quantity,
-            totalPrice: item.price * quantity,
+            unitPrice,
+            totalPrice: unitPrice * quantity,
             options,
           },
         ];
       }
 
       return calculateTotals(newItems, prev.discount, prev.promoCode);
+    });
+  }, [calculateTotals]);
+
+  const addItems = useCallback((item: MenuItem, selections: { variant?: string; quantity: number }[]) => {
+    setCart(prev => {
+      let currentItems = [...prev.items];
+
+      selections.forEach(selection => {
+        if (selection.quantity <= 0) return;
+
+        const options = selection.variant ? { variant: [selection.variant] } : undefined;
+        const variantName = selection.variant || 'Base';
+
+        // Check if item with same options already exists
+        const existingIndex = currentItems.findIndex(
+          cartItem => cartItem.menuItem.id === item.id &&
+            JSON.stringify(cartItem.options) === JSON.stringify(options)
+        );
+
+        if (existingIndex >= 0) {
+          const cartItem = currentItems[existingIndex];
+          const newQuantity = cartItem.quantity + selection.quantity;
+          const unitPrice = resolveMenuItemUnitPrice(item, {
+            quantity: newQuantity,
+            variantNames: getCartItemVariantLabels(options),
+          });
+          
+          currentItems[existingIndex] = {
+            ...cartItem,
+            quantity: newQuantity,
+            unitPrice,
+            totalPrice: newQuantity * unitPrice,
+          };
+        } else {
+          const unitPrice = resolveMenuItemUnitPrice(item, {
+            quantity: selection.quantity,
+            variantNames: getCartItemVariantLabels(options),
+          });
+          currentItems.push({
+            id: `${item.id}-${variantName}-${Date.now()}`,
+            menuItem: item,
+            quantity: selection.quantity,
+            unitPrice,
+            totalPrice: unitPrice * selection.quantity,
+            options,
+          });
+        }
+      });
+
+      return calculateTotals(currentItems, prev.discount, prev.promoCode);
     });
   }, [calculateTotals]);
 
@@ -116,10 +181,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newItems = prev.items.map(item => {
         if (item.id === cartItemId) {
           const newQuantity = Math.max(0, quantity);
+          const unitPrice = resolveMenuItemUnitPrice(item.menuItem, {
+            quantity: newQuantity,
+            variantNames: getCartItemVariantLabels(item.options),
+          });
           return {
             ...item,
             quantity: newQuantity,
-            totalPrice: item.menuItem.price * newQuantity,
+            unitPrice,
+            totalPrice: unitPrice * newQuantity,
           };
         }
         return item;
@@ -163,6 +233,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cart,
         itemCount,
         addItem,
+        addItems,
         updateQuantity,
         removeItem,
         clearCart,

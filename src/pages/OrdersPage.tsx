@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { EmptyOrders } from '@/components/ui/EmptyState';
 import { OrderStatusBadge } from '@/components/ui/OrderStatusBadge';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 import { formatPrice } from '@/components/ui/PriceDisplay';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, type Order } from '@/lib/api';
@@ -61,7 +62,8 @@ export const OrdersPage = () => {
     );
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined | null) => {
+    if (!dateString) return '—';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-KE', {
       day: 'numeric',
@@ -103,6 +105,8 @@ export const OrdersPage = () => {
           ))}
         </div>
       </main>
+
+      <ScrollToTopButton />
     </div>
   );
 };

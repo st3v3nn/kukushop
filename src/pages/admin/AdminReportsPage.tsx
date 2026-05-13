@@ -1,25 +1,37 @@
 import { useState, useEffect } from 'react';
 import {
-    BarChart3,
     TrendingUp,
     Users,
     Package,
     DollarSign,
-    Calendar,
-    ArrowUpRight,
-    ArrowDownRight,
     Bike
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { api } from '@/lib/api';
+import {
+    ResponsiveContainer,
+    ComposedChart,
+    Area,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    PieChart,
+    Pie,
+    Cell,
+    BarChart,
+    Legend,
+} from 'recharts';
 
 export const AdminReportsPage = () => {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<any>(null);
     const [categories, setCategories] = useState<any>([]);
     const [trend, setTrend] = useState<any>([]);
+    const [topItems, setTopItems] = useState<any>([]);
 
     useEffect(() => {
         const fetchReports = async () => {
@@ -29,6 +41,7 @@ export const AdminReportsPage = () => {
                     setStats(data.summary || data.stats);
                     setCategories(data.categories || []);
                     setTrend(data.trend || []);
+                    setTopItems(data.top_items || []);
                 }
             } catch (error) {
                 console.error('Failed to load reports:', error);
@@ -50,6 +63,19 @@ export const AdminReportsPage = () => {
         );
     }
 
+
+    const chartPalette = ['#ea580c', '#f59e0b', '#16a34a', '#0ea5e9', '#7c3aed', '#ef4444'];
+    const trendData = trend.map((item: any) => ({
+        label: item.label || item.month,
+        revenue: Number(item.revenue || 0),
+        orders: Number(item.order_count || 0),
+    }));
+    const categoryRevenueData = categories.map((cat: any) => ({
+        name: cat.name,
+        revenue: Number(cat.revenue || 0),
+        orders: Number(cat.order_count || 0),
+    }));
+    const maxTopItemRevenue = Math.max(1, ...topItems.map((item: any) => Number(item.revenue || 0)));
 
     return (
         <AdminLayout title="Reports & Analytics">
@@ -91,29 +117,27 @@ export const AdminReportsPage = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Sales Trend Chart (Simplified) */}
                     <Card>
                         <CardHeader>
-                            <CardTitle>Sales Trend</CardTitle>
-                            <CardDescription>Recent monthly revenue overview</CardDescription>
+                            <CardTitle>7-Day Revenue & Orders</CardTitle>
+                            <CardDescription>Revenue trend with completed order volume</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-64 flex items-end gap-2 pb-2">
-                                {trend && trend.length > 0 ? trend.map((item: any, i: number) => (
-                                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                                        <div
-                                            className="w-full bg-primary/20 rounded-t-sm hover:bg-primary/40 transition-colors relative group"
-                                            style={{ height: `${Math.min(100, (item.revenue / Math.max(1, ...trend.map((t: any) => t.revenue))) * 100)}%` }}
-                                        >
-                                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 rounded border opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                                KES {item.revenue.toLocaleString()}
-                                            </div>
-                                        </div>
-                                        <span className="text-[10px] text-muted-foreground uppercase">
-                                            {item.month}
-                                        </span>
-                                    </div>
-                                )) : (
+                            <div className="h-72">
+                                {trendData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <ComposedChart data={trendData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                            <XAxis dataKey="label" />
+                                            <YAxis yAxisId="left" />
+                                            <YAxis yAxisId="right" orientation="right" allowDecimals={false} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Area yAxisId="left" type="monotone" dataKey="revenue" fill="#fb923c" stroke="#ea580c" fillOpacity={0.28} name="Revenue (KES)" />
+                                            <Bar yAxisId="right" dataKey="orders" fill="#22c55e" radius={[6, 6, 0, 0]} name="Orders" />
+                                        </ComposedChart>
+                                    </ResponsiveContainer>
+                                ) : (
                                     <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                                         No trend data available
                                     </div>
@@ -122,35 +146,102 @@ export const AdminReportsPage = () => {
                         </CardContent>
                     </Card>
 
-                    {/* Category Breakdown */}
                     <Card>
                         <CardHeader>
-                            <CardTitle>Category Performance</CardTitle>
-                            <CardDescription>Revenue distribution by category</CardDescription>
+                            <CardTitle>Category Revenue Split</CardTitle>
+                            <CardDescription>Distribution of completed-order revenue across categories</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="h-72">
+                                {categoryRevenueData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={categoryRevenueData}
+                                                dataKey="revenue"
+                                                nameKey="name"
+                                                innerRadius={60}
+                                                outerRadius={95}
+                                                paddingAngle={3}
+                                            >
+                                                {categoryRevenueData.map((_: any, index: number) => (
+                                                    <Cell key={`cell-${index}`} fill={chartPalette[index % chartPalette.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip />
+                                            <Legend />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                        No category data available
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Category Orders vs Revenue</CardTitle>
+                            <CardDescription>Compare order count and revenue per category</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="h-80">
+                                {categoryRevenueData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={categoryRevenueData} layout="vertical" margin={{ left: 16, right: 16 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                            <XAxis type="number" />
+                                            <YAxis type="category" dataKey="name" width={110} />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Bar dataKey="orders" fill="#0ea5e9" radius={[0, 6, 6, 0]} name="Orders" />
+                                            <Bar dataKey="revenue" fill="#f97316" radius={[0, 6, 6, 0]} name="Revenue (KES)" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                        No category performance data available
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Top Selling Items</CardTitle>
+                            <CardDescription>Best-performing products by quantity sold</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-4">
-                                {categories && categories.length > 0 ? categories.map((cat: any) => {
-                                    const totalRev = categories.reduce((sum: number, c: any) => sum + c.revenue, 0);
-                                    const percentage = totalRev > 0 ? Math.round((cat.revenue / totalRev) * 100) : 0;
+                                {topItems.length > 0 ? topItems.map((item: any, index: number) => {
+                                    const revenue = Number(item.revenue || 0);
+                                    const quantity = Number(item.quantity_sold || 0);
+                                    const width = `${Math.max(12, Math.round((revenue / maxTopItemRevenue) * 100))}%`;
 
                                     return (
-                                        <div key={cat.name} className="space-y-1">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="font-medium">{cat.name}</span>
-                                                <span className="text-muted-foreground">{percentage}% (KES {cat.revenue.toLocaleString()})</span>
+                                        <div key={`${item.name}-${index}`} className="space-y-2">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <p className="font-medium line-clamp-1">{item.name}</p>
+                                                    <p className="text-sm text-muted-foreground">{quantity} sold</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="font-semibold">KES {revenue.toLocaleString()}</p>
+                                                </div>
                                             </div>
-                                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-primary"
-                                                    style={{ width: `${percentage}%` }}
-                                                />
+                                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                                                <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400" style={{ width }} />
                                             </div>
                                         </div>
                                     );
                                 }) : (
                                     <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                        No category data available
+                                        No item sales data available
                                     </div>
                                 )}
                             </div>

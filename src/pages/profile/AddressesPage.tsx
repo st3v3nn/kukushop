@@ -26,7 +26,7 @@ export const AddressesPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [newAddress, setNewAddress] = useState({ label: 'Home', street: '', city: 'Nairobi', phone: '', instructions: '' });
+  const [newAddress, setNewAddress] = useState({ label: 'Home', street: '', city: 'Nakuru', phone: '', instructions: '' });
 
   useEffect(() => {
     (async () => {
@@ -53,7 +53,7 @@ export const AddressesPage = () => {
         is_default: addresses.length === 0,
       });
       setAddresses(prev => [...prev, addr]);
-      setNewAddress({ label: 'Home', street: '', city: 'Nairobi', phone: '', instructions: '' });
+      setNewAddress({ label: 'Home', street: '', city: 'Nakuru', phone: '', instructions: '' });
       setIsDialogOpen(false);
       toast.success('Address added successfully');
     } catch (err) {
@@ -124,7 +124,7 @@ export const AddressesPage = () => {
                 <Input
                   value={newAddress.street}
                   onChange={(e) => setNewAddress(prev => ({ ...prev, street: e.target.value }))}
-                  placeholder="123 Kenyatta Avenue"
+                  placeholder="Nakuru Nyahururu Highway"
                 />
               </div>
               <div className="space-y-2">
@@ -132,7 +132,7 @@ export const AddressesPage = () => {
                 <Input
                   value={newAddress.city}
                   onChange={(e) => setNewAddress(prev => ({ ...prev, city: e.target.value }))}
-                  placeholder="Nairobi"
+                  placeholder="Nakuru"
                 />
               </div>
               <div className="space-y-2">

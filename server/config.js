@@ -36,6 +36,18 @@ class Config {
       nodeEnv: this.env,
       isDev: this.isDev,
       isProd: this.isProd,
+      url: process.env.APP_URL || (this.isDev ? 'http://localhost:8082' : 'https://kukunisisi.co.ke'),
+    };
+  }
+
+  // ============================================
+  // EMAIL (Resend)
+  // ============================================
+  get email() {
+    return {
+      apiKey: process.env.RESEND_API_KEY,
+      from: process.env.EMAIL_FROM || 'Kuku ni Sisi <onboarding@resend.dev>',
+      supportEmail: process.env.SUPPORT_EMAIL || 'kukunisisi@gmail.com',
     };
   }
 
@@ -175,6 +187,8 @@ class Config {
     const shortcode = process.env.MPESA_SHORTCODE || process.env.MPESA_BUSINESS_SHORTCODE || '';
     const passkey = process.env.MPESA_PASSKEY || '';
     const callbackBase = process.env.MPESA_CALLBACK_BASE || '';
+    const transactionType = process.env.MPESA_TRANSACTION_TYPE || 'CustomerPayBillOnline';
+    const partyB = process.env.MPESA_PARTYB || shortcode;
     const oauthUrl = sandbox
       ? 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
       : 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
@@ -182,7 +196,54 @@ class Config {
       ? 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
       : 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
 
-    return { sandbox, consumerKey, consumerSecret, shortcode, passkey, callbackBase, oauthUrl, stkUrl };
+    return { sandbox, consumerKey, consumerSecret, shortcode, passkey, callbackBase, transactionType, partyB, oauthUrl, stkUrl };
+  }
+
+  getMpesaValidationErrors(mpesaConfig = this.mpesa) {
+    const { consumerKey, consumerSecret, shortcode, passkey, callbackBase, partyB } = mpesaConfig;
+    const hasAnyMpesaConfig = [consumerKey, consumerSecret, shortcode, passkey, callbackBase, partyB].some(Boolean);
+
+    if (!hasAnyMpesaConfig) {
+      return [];
+    }
+
+    const errors = [];
+    const isShortcodeLike = (value) => /^\d{5,7}$/.test(String(value || '').trim());
+
+    if (!consumerKey) errors.push('MPESA_CONSUMER_KEY is missing.');
+    if (!consumerSecret) errors.push('MPESA_CONSUMER_SECRET is missing.');
+    if (!shortcode) errors.push('MPESA_SHORTCODE is missing.');
+    if (!passkey) errors.push('MPESA_PASSKEY is missing.');
+    if (!partyB) errors.push('MPESA_PARTYB is missing.');
+
+    if (consumerKey && passkey && consumerKey === passkey) {
+      errors.push('MPESA_PASSKEY matches MPESA_CONSUMER_KEY. Use the Daraja Lipa Na M-Pesa passkey instead.');
+    }
+
+    if (consumerSecret && passkey && consumerSecret === passkey) {
+      errors.push('MPESA_PASSKEY matches MPESA_CONSUMER_SECRET. Use the Daraja Lipa Na M-Pesa passkey instead.');
+    }
+
+    if (shortcode && !isShortcodeLike(shortcode)) {
+      errors.push('MPESA_SHORTCODE must be a 5-7 digit shortcode or till number.');
+    }
+
+    if (partyB && !isShortcodeLike(partyB)) {
+      errors.push('MPESA_PARTYB must be a 5-7 digit shortcode or till number, not a phone number.');
+    }
+
+    if (callbackBase) {
+      try {
+        const parsed = new URL(callbackBase);
+        if (!/^https?:$/.test(parsed.protocol)) {
+          errors.push('MPESA_CALLBACK_BASE must use http or https.');
+        }
+      } catch (err) {
+        errors.push('MPESA_CALLBACK_BASE must be a valid absolute URL.');
+      }
+    }
+
+    return errors;
   }
 
   // ============================================
@@ -216,6 +277,7 @@ class Config {
       logging: this.logging,
       security: this.security,
       features: this.features,
+      email: this.email,
     };
   }
 
@@ -244,6 +306,11 @@ class Config {
         } catch (err) {
           errors.push(`Cannot create upload directory: ${uploadDir}`);
         }
+      }
+
+      const mpesaErrors = this.getMpesaValidationErrors();
+      if (this.isProd && mpesaErrors.length > 0) {
+        errors.push(`MPesa configuration is invalid:\n${mpesaErrors.join('\n')}`);
       }
 
       if (errors.length > 0) {

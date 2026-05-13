@@ -31,7 +31,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     preparation_time: product?.preparation_time || '',
     is_featured: product?.is_featured || false,
     is_available: product?.is_available ?? true,
+    tags: Array.isArray(product?.tags) ? product.tags.join(', ') : '',
   });
+  const [tierPricing, setTierPricing] = useState<Array<{ name: string; price: string }>>(
+    Array.isArray(product?.tier_pricing)
+      ? product.tier_pricing.map((tier: any) => ({
+        name: String(tier.name ?? tier.tier_name ?? ''),
+        price: String(tier.price ?? ''),
+      }))
+      : []
+  );
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>(product?.image_url || '');
@@ -50,6 +59,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       previewUrlsRef.current = [];
     };
   }, []);
+
+  const handleImageRenderError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget;
+    target.onerror = null;
+    target.src = '/placeholder.svg';
+  };
 
   const revokePreviewUrl = (url: string) => {
     if (!url.startsWith('blob:')) return;
@@ -229,6 +244,20 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       submitFormData.append('preparation_time', formData.preparation_time);
       submitFormData.append('is_featured', String(formData.is_featured));
       submitFormData.append('is_available', String(formData.is_available));
+      submitFormData.append('tags', JSON.stringify(
+        formData.tags
+          .split(',')
+          .map((tag) => tag.trim().toLowerCase())
+          .filter(Boolean)
+      ));
+      submitFormData.append('tier_pricing', JSON.stringify(
+        tierPricing
+          .map((tier) => ({
+            name: tier.name.trim(),
+            price: Number(tier.price),
+          }))
+          .filter((tier) => tier.name && tier.price > 0)
+      ));
 
       if (imageFile) {
         submitFormData.append('image', imageFile);
@@ -263,6 +292,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                     src={getImageURL(imagePreview)} 
                     alt="Preview" 
                     className="h-48 w-48 object-cover rounded-lg"
+                    onError={handleImageRenderError}
                   />
                   <button
                     type="button"
@@ -309,6 +339,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                     src={getImageURL(secondaryImagePreview)}
                     alt="Secondary preview"
                     className="h-48 w-48 object-cover rounded-lg"
+                    onError={handleImageRenderError}
                   />
                   <button
                     type="button"
@@ -371,19 +402,35 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               />
             </div>
 
+            <div>
+              <Label htmlFor="tags">Search Tags</Label>
+              <Input
+                id="tags"
+                value={formData.tags}
+                onChange={(e) => handleInputChange('tags', e.target.value)}
+                placeholder="e.g. specials, snacks, breakfast"
+                className="mt-1"
+                disabled={uploading}
+              />
+              <p className="mt-1 text-xs text-gray-500">Comma-separated tags used in menu search and filters.</p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="price">Price (KES) *</Label>
+                <Label htmlFor="price">Base / Starting Price (KES) *</Label>
                 <Input
                   id="price"
                   type="number"
                   step="0.01"
                   value={formData.price}
                   onChange={(e) => handleInputChange('price', e.target.value)}
-                  placeholder="0.00"
+                  placeholder="Use the regular or lowest starting price"
                   className="mt-1"
                   disabled={uploading}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  If you add size options below, shoppers will choose one on the product page.
+                </p>
               </div>
 
               <div>
@@ -397,6 +444,60 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                   className="mt-1"
                   disabled={uploading}
                 />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Sizes & Variant Pricing</Label>
+                  <p className="text-xs text-muted-foreground">Add options like 300ml, 500ml, 1L, Small, Medium, or Large with their own prices.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTierPricing((prev) => [...prev, { name: '', price: '' }])}
+                  disabled={uploading}
+                >
+                  Add Size Option
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {tierPricing.map((tier, index) => (
+                  <div key={`tier-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <Input
+                      placeholder="Option name, e.g. 500ml"
+                      value={tier.name}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setTierPricing((prev) => prev.map((item, idx) => idx === index ? { ...item, name: value } : item));
+                      }}
+                      disabled={uploading}
+                    />
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Price for this option"
+                      value={tier.price}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setTierPricing((prev) => prev.map((item, idx) => idx === index ? { ...item, price: value } : item));
+                      }}
+                      disabled={uploading}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setTierPricing((prev) => prev.filter((_, idx) => idx !== index))}
+                      disabled={uploading}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
               </div>
             </div>
 

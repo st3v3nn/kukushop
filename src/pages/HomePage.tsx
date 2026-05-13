@@ -5,6 +5,7 @@ import { Header } from '@/components/layout/Header';
 import { FoodCard } from '@/components/food/FoodCard';
 import { PromoCarousel } from '@/components/promo/PromoBanner';
 import { StickyCartButton } from '@/components/cart/StickyCartButton';
+import { ScrollToTopButton } from '@/components/ui/ScrollToTopButton';
 import { api, getImageURL } from '@/lib/api';
 import type { Category, MenuItem } from '@/lib/api';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -55,20 +56,45 @@ export const HomePage = () => {
     const lower = name.toLowerCase();
     if (lower.includes('restaurant') || lower.includes('rest')) return 'Cafe';
     if (lower.includes('butch') || lower.includes('butcher')) return 'Butchery';
-    if (lower.includes('groc') || lower.includes('grocer') || lower.includes('groceries')) return 'Kuku ni Sisi Groceries';
+    if (lower.includes('groc') || lower.includes('grocer') || lower.includes('groceries')) return 'Sokoni';
     return name;
   };
-  const promoBanners = orderedCategories.slice(0, 3).map((category) => {
-    const fallbackItemImage = menuItems.find((item) => item.categoryId === category.id)?.image || '';
-    const sourceImage = category.image || fallbackItemImage || '/placeholder.svg';
+  const isUploadedAsset = (path?: string | null) => typeof path === 'string' && path.startsWith('/uploads/');
 
-    return {
+  // 1. Featured Item Banners (Legacy items that are featured)
+  const featuredPromoBanners = menuItems
+    .filter((item) => (item.isFeatured || item.is_featured) && (isUploadedAsset(item.image) || isUploadedAsset(item.image_url) || isUploadedAsset(item.secondaryImage) || isUploadedAsset(item.secondary_image_url)))
+    .slice(0, 2)
+    .map((item) => ({
+      title: item.name,
+      subtitle: item.description || `Fresh from ${item.category || 'our menu'}`,
+      image: getImageURL(item.image || item.image_url || item.secondaryImage || item.secondary_image_url || '/placeholder.svg'),
+      link: `/meal/${item.id}`,
+    }));
+
+  // 2. Category Banners (Cafe, Butchery, Sokoni)
+  const categoryPromoBanners = orderedCategories
+    .filter((category) => isUploadedAsset(category.image))
+    .slice(0, 4) // Increase limit to ensure we find Sokoni
+    .map((category) => ({
       title: `${getDisplayName(category.name)} Specials`,
       subtitle: category.description || 'Fresh selections from this category',
-      image: getImageURL(sourceImage),
+      image: getImageURL(category.image || '/placeholder.svg'),
       link: `/menu?category=${category.id}`,
-    };
+      categoryName: getDisplayName(category.name),
+    }));
+
+  // Combine them: Start with featured items
+  const promoBanners = [...featuredPromoBanners];
+  
+  // Add category banners following the orderedCategories display order
+  categoryPromoBanners.forEach(catBanner => {
+    // Avoid adding category if we already have it in items or if it's already added
+    if (promoBanners.length < 4 && !promoBanners.some(existing => existing.link === catBanner.link)) {
+      promoBanners.push(catBanner);
+    }
   });
+
   const beveragesCategory = orderedCategories.find((category) => /beverage|drink/i.test(category.name));
   const snacksCategory = orderedCategories.find((category) => /snack/i.test(category.name));
   const beveragesAndSnacksBanner = (() => {
@@ -77,9 +103,13 @@ export const HomePage = () => {
     const secondaryCategory = beveragesCategory && snacksCategory && beveragesCategory.id !== snacksCategory.id
       ? snacksCategory
       : null;
-    const primaryImage = primaryCategory.image || menuItems.find((item) => item.categoryId === primaryCategory.id)?.image || '';
+    const primaryImage = isUploadedAsset(primaryCategory.image)
+      ? primaryCategory.image
+      : (menuItems.find((item) => item.categoryId === primaryCategory.id && (isUploadedAsset(item.image) || isUploadedAsset(item.image_url)))?.image || '');
     const secondaryImage = secondaryCategory
-      ? (secondaryCategory.image || menuItems.find((item) => item.categoryId === secondaryCategory.id)?.image || '')
+      ? ((isUploadedAsset(secondaryCategory.image)
+        ? secondaryCategory.image
+        : (menuItems.find((item) => item.categoryId === secondaryCategory.id && (isUploadedAsset(item.image) || isUploadedAsset(item.image_url)))?.image || '')))
       : '';
     const subtitle = [primaryCategory.description, secondaryCategory?.description].filter(Boolean).join(' • ');
 
@@ -90,7 +120,7 @@ export const HomePage = () => {
       link: `/menu?category=${primaryCategory.id}`,
     };
   })();
-  const bannerList = beveragesAndSnacksBanner
+  const bannerList = (beveragesAndSnacksBanner && promoBanners.length < 4)
     ? [...promoBanners, beveragesAndSnacksBanner]
     : promoBanners;
 
@@ -153,7 +183,13 @@ export const HomePage = () => {
                   {/* Icon Badge */}
                       <div className="overflow-hidden rounded-2xl shadow-lg group-hover:scale-105 transition-transform duration-300 w-full h-24">
                         {category.image ? (
-                          <img src={getImageURL(category.image)} alt={category.name} className="w-full h-full object-cover" loading="lazy" />
+                          <img
+                            src={getImageURL(category.image)}
+                            alt={category.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder.svg'; }}
+                          />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-white">{getDisplayName(category.name).slice(0,1)}</div>
                         )}
@@ -191,7 +227,7 @@ export const HomePage = () => {
             const lower = name.toLowerCase();
             if (lower.includes('restaurant') || lower.includes('rest')) return 'Kuku ni Sisi Cafe';
             if (lower.includes('butch') || lower.includes('butcher')) return 'Kuku ni Sisi Butchery';
-            if (lower.includes('groc') || lower.includes('grocer') || lower.includes('groceries')) return 'Kuku ni Sisi Groceries';
+            if (lower.includes('groc') || lower.includes('grocer') || lower.includes('groceries')) return 'Sokoni';
             return name;
           };
 
@@ -219,6 +255,7 @@ export const HomePage = () => {
         })}
       </main>
 
+      <ScrollToTopButton />
       <StickyCartButton />
     </div>
   );

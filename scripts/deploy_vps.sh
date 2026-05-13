@@ -11,6 +11,7 @@ APP_DIR=/opt/kukunisisi
 CERTS_DIR=${APP_DIR}/certs
 CERTBOT_WEBROOT=${APP_DIR}/certbot/www
 COMPOSE_FILE=${APP_DIR}/docker-compose.prod.yml
+EXPECTED_PUBLIC_IP=167.86.123.246
 
 if [ -z "$REPO_URL" ]; then
   echo "Usage: sudo $0 <git_repo_url> [branch]"
@@ -41,6 +42,15 @@ else
 fi
 cd "$APP_DIR"
 
+if [ ! -f "$APP_DIR/.env" ]; then
+  echo "Missing $APP_DIR/.env. Create the root .env with the MPESA_* values before deploying."
+  exit 1
+fi
+
+UPLOAD_PATH=${UPLOAD_DIR:-/var/lib/kukunisisi/uploads}
+LOG_PATH=${LOG_DIR:-/var/log/kukunisisi}
+mkdir -p "$UPLOAD_PATH" "$LOG_PATH"
+
 # 3) Ensure directories exist for certbot and certs
 mkdir -p "$CERTS_DIR" "$CERTBOT_WEBROOT"
 chown -R $USER:$USER "$APP_DIR"
@@ -53,13 +63,36 @@ docker compose -f docker-compose.prod.yml up -d --build db server frontend
 
 # 5) Obtain Let's Encrypt certs using certbot standalone
 # Note: certbot cannot issue certificates for bare IP addresses — ensure your domain A record points to this VPS.
-read -p "Enter an email for Let's Encrypt registration: " CERT_EMAIL
+: ${CERT_EMAIL:=${3:-}}
 if [ -z "$CERT_EMAIL" ]; then
-  echo "Email is required for cert registration"; exit 1
+  echo "No CERT_EMAIL provided as 3rd arg or CERT_EMAIL env var. Please re-run as: sudo $0 <git_repo_url> [branch] <email>";
+  exit 1
+fi
+
+# Fail fast if DNS is still pointing at an old server.
+for host in kukunisisi.co.ke www.kukunisisi.co.ke; do
+  RESOLVED_IP=$(getent ahostsv4 "$host" | awk 'NR==1 {print $1}')
+  if [ -z "$RESOLVED_IP" ]; then
+    echo "Could not resolve $host. Update DNS to point at $EXPECTED_PUBLIC_IP before requesting certificates."
+    exit 1
+  fi
+  if [ "$RESOLVED_IP" != "$EXPECTED_PUBLIC_IP" ]; then
+    echo "$host resolves to $RESOLVED_IP, but this deployment expects $EXPECTED_PUBLIC_IP."
+    echo "Update DNS before running certbot so the ACME challenge reaches this VPS."
+    exit 1
+  fi
+done
+
+# Open firewall ports if ufw is installed (non-fatal)
+if command -v ufw >/dev/null 2>&1; then
+  echo "Configuring ufw to allow HTTP/HTTPS..."
+  ufw allow 80/tcp || true
+  ufw allow 443/tcp || true
 fi
 
 # Use certbot docker image in standalone mode (binds to port 80 temporarily)
-docker run --rm -it \
+# Run non-interactively and without allocating a TTY so this can be automated.
+docker run --rm \
   -v "$CERTS_DIR":/etc/letsencrypt \
   -v "$CERTBOT_WEBROOT":/var/www/certbot \
   -p 80:80 \

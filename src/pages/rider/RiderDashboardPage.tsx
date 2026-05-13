@@ -309,11 +309,11 @@ export const RiderDashboardPage = () => {
   const todayStats = stats;
 
 
-  const customerLocation = activeDelivery
+  const customerLocation = activeDelivery && activeDelivery.address
     ? {
-      lat: Number(activeDelivery.address.latitude || activeDelivery.address.lat) || -1.2750,
-      lng: Number(activeDelivery.address.longitude || activeDelivery.address.lng) || 36.8150,
-      label: activeDelivery.address.street
+      lat: Number(activeDelivery.address?.latitude || activeDelivery.address?.lat) || -1.2750,
+      lng: Number(activeDelivery.address?.longitude || activeDelivery.address?.lng) || 36.8150,
+      label: activeDelivery.address?.street || 'Delivery Location'
     }
     : undefined;
 
@@ -451,8 +451,8 @@ export const RiderDashboardPage = () => {
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                       <div>
-                        <p>{order.address.street}</p>
-                        <p className="text-muted-foreground">{order.address.city}</p>
+                        <p>{order.address?.street || 'Address not provided'}</p>
+                        <p className="text-muted-foreground">{order.address?.city}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -501,7 +501,7 @@ export const RiderDashboardPage = () => {
                               toast.success(`Location: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
                               // Open in maps with current location
                               window.open(
-                                `https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${encodeURIComponent(activeDelivery.address.street + ', ' + (activeDelivery.address.city || ''))}`,
+                                `https://www.google.com/maps/dir/?api=1&origin=${latitude},${longitude}&destination=${encodeURIComponent((activeDelivery?.address?.street || 'Location') + ', ' + (activeDelivery?.address?.city || ''))}`,
                                 '_blank'
                               );
                             },
@@ -550,8 +550,8 @@ export const RiderDashboardPage = () => {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">{activeDelivery.customerName}</p>
-                      <p className="text-sm text-muted-foreground">{activeDelivery.address.street}</p>
+                      <p className="font-medium">{activeDelivery?.customerName}</p>
+                      <p className="text-sm text-muted-foreground">{activeDelivery?.address?.street || 'Address not provided'}</p>
                     </div>
                     <Button variant="outline" size="icon" asChild>
                       <a href={`tel:${activeDelivery.customerPhone}`}>
@@ -652,7 +652,7 @@ export const RiderDashboardPage = () => {
                       <h3 className="font-semibold">{delivery.orderNumber || delivery.order_number}</h3>
                       <p className="text-sm text-muted-foreground">{delivery.customerName || delivery.customer_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(delivery.updated_at || delivery.deliveredAt).toLocaleDateString()}
+                        {delivery.updated_at ? new Date(delivery.updated_at).toLocaleDateString() : (delivery.deliveredAt ? new Date(delivery.deliveredAt).toLocaleDateString() : '—')}
                       </p>
                     </div>
                     <div className="text-right">

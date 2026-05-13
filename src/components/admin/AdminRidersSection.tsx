@@ -30,7 +30,7 @@ const statusColors: Record<Rider['status'], string> = {
 
 export const AdminRidersSection = () => {
   const [riders, setRiders] = useState<any[]>([]);
-  const [newRider, setNewRider] = useState({ name: '', email: '', phone: '' });
+  const [newRider, setNewRider] = useState({ name: '', email: '', phone: '', password: '' });
   const [isCreating, setIsCreating] = useState(false);
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
@@ -80,7 +80,7 @@ export const AdminRidersSection = () => {
           setCreatedPassword(resp.password);
           setIsPasswordDialogOpen(true);
         }
-        setNewRider({ name: '', email: '', phone: '' });
+        setNewRider({ name: '', email: '', phone: '', password: '' });
       }
     } catch (err) {
       console.error('Failed to create rider', err);
@@ -189,6 +189,10 @@ export const AdminRidersSection = () => {
             <div>
               <Label>Phone</Label>
               <Input value={newRider.phone} onChange={(e) => setNewRider(prev => ({ ...prev, phone: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input type="password" value={newRider.password} onChange={(e) => setNewRider(prev => ({ ...prev, password: e.target.value }))} placeholder="Optional custom password" />
             </div>
           </div>
           <div className="mt-3">
@@ -312,7 +316,7 @@ export const AdminRidersSection = () => {
                 <div key={o.id} className="flex items-center justify-between border-b pb-2">
                   <div>
                     <p className="font-medium">{o.order_number || o.id}</p>
-                    <p className="text-sm text-muted-foreground">{o.status} • {new Date(o.created_at || o.createdAt || Date.now()).toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">{o.status} • {o.created_at || o.createdAt ? new Date(o.created_at || o.createdAt).toLocaleString() : new Date(Date.now()).toLocaleString()}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">{o.delivery_fee != null ? `KES ${o.delivery_fee}` : o.deliveryFee ? `KES ${o.deliveryFee}` : 'KES 0'}</p>

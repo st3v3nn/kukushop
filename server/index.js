@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
@@ -12,7 +13,7 @@ const { optimizeImage, deleteImages } = require('./imageOptimizer');
 const DatabaseManager = require('./database');
 const { checkDatabaseHealth, databaseErrorHandler, withRetry, CircuitBreaker } = require('./resilience');
 const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(config.email.apiKey);
 
 // ============================================
 // EMAIL TEMPLATES (Branded Kuku ni Sisi)
@@ -55,18 +56,22 @@ const getWelcomeTemplate = (name) => `
   </div>
 `;
 
-const getPasswordResetTemplate = (name, resetCode) => `
+const getPasswordResetTemplate = (name, resetLink) => `
   <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
     ${getEmailHeader('Reset Your Password')}
     <div style="padding: 40px 30px; line-height: 1.6; color: #1e293b;">
       <h2 style="color: #0f172a; margin-top: 0;">Hello ${name},</h2>
-      <p style="font-size: 16px;">We received a request to reset your password. Use the verification code below to complete the process:</p>
+      <p style="font-size: 16px;">We received a request to reset your password. Click the button below to choose a new password:</p>
       
-      <div style="background-color: #fff7ed; border: 2px dashed #fed7aa; padding: 30px; text-align: center; border-radius: 12px; margin: 30px 0;">
-        <h1 style="font-size: 38px; letter-spacing: 8px; color: #c2410c; margin: 0; font-family: 'Courier New', Courier, monospace; font-weight: bold;">${resetCode}</h1>
+      <div style="margin: 35px 0; text-align: center;">
+        <a href="${resetLink}" style="background-color: #f97316; color: white; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(249, 115, 22, 0.2);">Reset My Password</a>
       </div>
       
-      <p style="font-size: 14px; color: #64748b;">This code will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+      <p style="font-size: 14px; color: #64748b;">This link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+      <p style="font-size: 12px; color: #94a3b8; margin-top: 20px; word-break: break-all;">
+        If the button doesn't work, copy and paste this URL into your browser:<br/>
+        <a href="${resetLink}" style="color: #f97316;">${resetLink}</a>
+      </p>
     </div>
     ${getEmailFooter()}
   </div>
@@ -85,6 +90,8 @@ try {
 }
 
 const app = express();
+app.set('trust proxy', true);
+
 
 // ============================================
 // MIDDLEWARE CONFIGURATION
@@ -109,14 +116,29 @@ console.log('🛡️ CORS initialized in mode:', config.isDev ? 'DEVELOPMENT (pe
 console.log('🛡️ Allowed origins:', config.cors.origin);
 
 // Body parser middleware
-app.use(express.json({ limit: '10mb' }));
+// JSON body parser with `verify` to capture raw body for debugging proxied requests
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    try { req.rawBody = buf && buf.toString(); } catch (e) { req.rawBody = undefined; }
+  }
+}));
+
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Request logging middleware
 app.use(requestLogger);
 
-// Serve static files for uploads
+// Serve static files for uploads from the persistent host path first.
+// Fall back to the legacy in-repo uploads directory so older or mismatched files still render.
 app.use('/uploads', express.static(config.upload.directory));
+console.log('📁 Serving uploads from:', config.upload.directory);
+
+const legacyUploadDir = path.join(__dirname, 'uploads');
+if (legacyUploadDir !== config.upload.directory && fs.existsSync(legacyUploadDir)) {
+  app.use('/uploads', express.static(legacyUploadDir));
+  console.log('📁 Serving legacy uploads from:', legacyUploadDir);
+}
 
 // ============================================
 // DATABASE CONFIGURATION
@@ -195,6 +217,7 @@ let pool;
     logger.info('✅ Database connection pool ready');
     // Ensure rider_orders table exists and seed sample data in development
     try {
+      await ensureAuthSchema();
       await ensureMenuTables();
       await ensureRiderOrdersTable();
       await ensureCustomerAddressesTable();
@@ -252,31 +275,104 @@ const generateToken = () => {
 
 // Hash password (simple implementation for demo)
 const hashPassword = (password) => {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  return crypto.createHash('sha256').update(String(password || '')).digest('hex');
+};
+
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+const verifyPasswordHash = async (password, storedHash) => {
+  if (!storedHash) return { valid: false, needsRehash: false };
+
+  if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+    try {
+      const bcrypt = require('bcryptjs');
+      return { valid: await bcrypt.compare(password, storedHash), needsRehash: false };
+    } catch (err) {
+      console.error('Failed to verify bcrypt password hash:', err);
+      return { valid: false, needsRehash: false };
+    }
+  }
+
+  if (storedHash === password) {
+    return { valid: true, needsRehash: true };
+  }
+
+  return { valid: hashPassword(password) === storedHash, needsRehash: false };
+};
+
+const parseProductTags = (raw) => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean))];
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean))];
+      }
+    } catch (err) {
+      // fallback to comma-separated
+    }
+    return [...new Set(raw.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+  }
+  return [];
+};
+
+const parseTierPricing = (raw) => {
+  if (!raw) return [];
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((tier) => ({
+      name: String(tier.name ?? tier.tier_name ?? tier.label ?? '').trim(),
+      price: Number(tier.price ?? 0),
+    }))
+    .filter((tier) => tier.name && Number.isFinite(tier.price) && tier.price > 0);
 };
 
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
+    // Log raw body when available to help debug proxied requests
+    if (req.rawBody) console.info('Raw login body:', req.rawBody);
     const { email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
     // Check if user exists in database
-    const { rows } = await pool.query('SELECT * FROM public.users WHERE email = $1 AND is_active = true', [email]);
+    const { rows } = await pool.query(
+      'SELECT * FROM public.users WHERE LOWER(TRIM(email)) = $1 AND COALESCE(is_active, true) = true',
+      [normalizedEmail]
+    );
 
     if (rows.length === 0) {
       return res.status(401).json({ error: 'Invalid login credentials' });
     }
 
     const dbUser = rows[0];
-    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    const { valid: passwordValid, needsRehash } = await verifyPasswordHash(password, dbUser.password_hash);
 
     // Verify password
-    if (dbUser.password_hash !== passwordHash) {
+    if (!passwordValid) {
       return res.status(401).json({ error: 'Invalid login credentials' });
+    }
+
+    if (needsRehash) {
+      await pool.query(
+        'UPDATE public.users SET password_hash = $1, updated_at = now() WHERE id = $2',
+        [hashPassword(password), dbUser.id]
+      );
     }
 
     // Create JWT access token (short-lived) and a refresh token persisted in DB
@@ -292,7 +388,8 @@ app.post('/api/auth/login', async (req, res) => {
     const user = {
       id: dbUser.id,
       email: dbUser.email,
-      name: dbUser.name || email.split('@')[0],
+      name: dbUser.name || normalizedEmail.split('@')[0],
+      phone: dbUser.phone || null,
       role: dbUser.role
     };
 
@@ -310,24 +407,25 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, name, phone } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
     // Check if user already exists
-    const { rows: existingUsers } = await pool.query('SELECT id FROM public.users WHERE email = $1', [email]);
+    const { rows: existingUsers } = await pool.query('SELECT id FROM public.users WHERE LOWER(TRIM(email)) = $1', [normalizedEmail]);
 
     if (existingUsers.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    const passwordHash = hashPassword(password);
 
     // Insert new user
     const { rows } = await pool.query(
       'INSERT INTO public.users (email, password_hash, name, phone, role, is_active) VALUES ($1, $2, $3, $4, $5, true) RETURNING id, email, name, role, phone',
-      [email, passwordHash, name || email.split('@')[0], phone || null, 'customer']
+      [normalizedEmail, passwordHash, name || normalizedEmail.split('@')[0], phone || null, 'customer']
     );
 
     const dbUser = rows[0];
@@ -352,15 +450,22 @@ app.post('/api/auth/register', async (req, res) => {
     createNotification(dbUser.id, 'welcome', 'Welcome! 🎉', `Welcome to Kuku ni Sisi, ${dbUser.name}! Explore our delicious menu and place your first order.`).catch(() => { });
 
     // Send welcome email via Resend
-    if (process.env.RESEND_API_KEY) {
+    if (config.email.apiKey) {
       resend.emails.send({
-        from: 'Kuku ni Sisi <onboarding@resend.dev>',
+        from: config.email.from,
         to: [email],
+        reply_to: config.email.supportEmail,
         subject: 'Welcome to Kuku ni Sisi! 🍗',
-        html: getWelcomeTemplate(user.name)
+        html: getWelcomeTemplate(dbUser.name)
       })
-        .then(result => console.log('Welcome email sent successfully:', result))
-        .catch(err => console.error('CRITICAL: Failed to send welcome email:', err.message, err.response?.data || ''));
+        .then(result => {
+          if (result.error) {
+            console.error('Resend Error (Welcome):', result.error);
+          } else {
+            console.log('Welcome email sent successfully:', result.data?.id);
+          }
+        })
+        .catch(err => console.error('CRITICAL: Failed to send welcome email:', err.message));
     }
   } catch (err) {
     console.error(err);
@@ -420,15 +525,20 @@ app.post('/api/auth/refresh', async (req, res) => {
     // Rotate refresh token: delete old, insert new
     const newRefresh = generateToken();
     const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await pool.query('BEGIN');
+    const client = await pool.connect();
     try {
-      await pool.query('DELETE FROM public.refresh_tokens WHERE token = $1', [refresh_token]);
-      await pool.query('INSERT INTO public.refresh_tokens (token, user_id, expires_at) VALUES ($1, $2, $3)', [newRefresh, user.id, newExpiresAt]);
-      await pool.query('COMMIT');
-    } catch (err) {
-      await pool.query('ROLLBACK').catch(() => { });
-      console.error('Failed to rotate refresh token', err);
-      return res.status(500).json({ error: 'Failed to refresh token' });
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM public.refresh_tokens WHERE token = $1', [refresh_token]);
+        await client.query('INSERT INTO public.refresh_tokens (token, user_id, expires_at) VALUES ($1, $2, $3)', [newRefresh, user.id, newExpiresAt]);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => { });
+        console.error('Failed to rotate refresh token', err);
+        return res.status(500).json({ error: 'Failed to refresh token' });
+      }
+    } finally {
+      client.release();
     }
 
     // Audit rotation: revoke old and create new
@@ -471,7 +581,7 @@ app.post('/api/auth/revoke/:token', requireAuth(), async (req, res) => {
 
 // ============ MENU ENDPOINTS ============
 
-// ============ MENU ENDPOINTS ============
+
 
 app.get('/api/categories', async (req, res) => {
   try {
@@ -511,8 +621,9 @@ app.get('/api/menu', async (req, res) => {
 // list and are suitable for local development and testing.
 // --------------------
 
-// Simple SSE clients list for rider stream
-const sseClients = new Set();
+// SSE clients map: stores {res, userId, role} for each connection to prevent data leaks
+// Key: UUID string, Value: {res, userId, role}
+const sseClients = new Map();
 
 // Simple in-memory rate limiter for critical endpoints (per IP)
 const rateLimitMap = new Map();
@@ -654,6 +765,9 @@ const ensureMenuTables = async () => {
         price NUMERIC NOT NULL,
         image_url TEXT,
         secondary_image_url TEXT,
+        is_featured BOOLEAN DEFAULT false,
+        tags TEXT[] DEFAULT '{}',
+        tier_pricing JSONB DEFAULT '[]'::jsonb,
         is_available BOOLEAN DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -674,6 +788,36 @@ const ensureMenuTables = async () => {
             AND column_name = 'secondary_image_url'
         ) THEN
           ALTER TABLE public.menu_items ADD COLUMN secondary_image_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'menu_items'
+            AND column_name = 'is_featured'
+        ) THEN
+          ALTER TABLE public.menu_items ADD COLUMN is_featured BOOLEAN DEFAULT false;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'menu_items'
+            AND column_name = 'tags'
+        ) THEN
+          ALTER TABLE public.menu_items ADD COLUMN tags TEXT[] DEFAULT '{}';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'menu_items'
+            AND column_name = 'tier_pricing'
+        ) THEN
+          ALTER TABLE public.menu_items ADD COLUMN tier_pricing JSONB DEFAULT '[]'::jsonb;
         END IF;
       END$$;
     `);
@@ -716,6 +860,52 @@ const ensureMenuTables = async () => {
       }
       console.log('✅ Menu categories and items seeded');
     }
+
+    // Ensure "Beverages & Snacks" category exists and consolidate old beverage/snack items into it
+    const { rows: comboRows } = await pool.query(
+      `SELECT id, name FROM public.menu_categories WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      ['Beverages & Snacks']
+    );
+
+    let comboCategoryId = comboRows[0]?.id || null;
+    if (!comboCategoryId) {
+      const inserted = await pool.query(
+        `INSERT INTO public.menu_categories (name, description, image_url, display_order, is_active)
+         VALUES ($1, $2, $3, $4, true)
+         RETURNING id`,
+        [
+          'Beverages & Snacks',
+          'Hot and cold drinks, refreshments, and light bites.',
+          '/placeholder.svg',
+          4,
+        ]
+      );
+      comboCategoryId = inserted.rows[0].id;
+    }
+
+    const { rows: legacyCategoryRows } = await pool.query(
+      `SELECT id, name
+       FROM public.menu_categories
+       WHERE LOWER(name) IN ('beverages', 'snacks')
+         AND id <> $1`,
+      [comboCategoryId]
+    );
+
+    for (const category of legacyCategoryRows) {
+      await pool.query(
+        `UPDATE public.menu_items
+         SET category_id = $1, updated_at = now()
+         WHERE category_id = $2`,
+        [comboCategoryId, category.id]
+      );
+
+      await pool.query(
+        `UPDATE public.menu_categories
+         SET is_active = false, updated_at = now()
+         WHERE id = $1`,
+        [category.id]
+      );
+    }
   } catch (err) {
     console.error('Failed to ensure menu tables:', err);
   }
@@ -734,6 +924,89 @@ const ensureRefreshTokensTable = async () => {
     `);
   } catch (err) {
     console.error('Failed to ensure refresh_tokens table:', err);
+  }
+};
+
+// Ensure auth-related columns exist on older deployments
+const ensureAuthSchema = async () => {
+  try {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'phone'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN phone TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'role'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'is_active'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'avatar_url'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN avatar_url TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'last_login'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN last_login TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'reset_token'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN reset_token TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'reset_token_expires'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN reset_token_expires TIMESTAMPTZ;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'created_at'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'updated_at'
+        ) THEN
+          ALTER TABLE public.users ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      UPDATE public.users
+      SET role = COALESCE(NULLIF(role, ''), 'customer'),
+          is_active = COALESCE(is_active, true)
+      WHERE role IS NULL OR role = '' OR is_active IS NULL;
+    `);
+  } catch (err) {
+    console.error('Failed to ensure auth schema:', err);
   }
 };
 
@@ -776,6 +1049,7 @@ const ensureOrdersTable = async () => {
         notes TEXT,
         promotion_code TEXT,
         payment_method TEXT,
+        phone TEXT,
         status TEXT DEFAULT 'created',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -798,6 +1072,13 @@ const ensureOrdersTable = async () => {
           WHERE table_name = 'orders' AND column_name = 'payment_method'
         ) THEN
           ALTER TABLE public.orders ADD COLUMN payment_method TEXT;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'orders' AND column_name = 'phone'
+        ) THEN
+          ALTER TABLE public.orders ADD COLUMN phone TEXT;
         END IF;
       END
       $$;
@@ -1002,14 +1283,56 @@ async function createBroadcastNotification(targetRole, type, title, message, dat
   }
 }
 
-// Broadcast helper for SSE
+// Broadcast helpers for SSE - with user/role filtering to prevent data leaks
+const broadcastToUser = (userId, event) => {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const [, client] of sseClients) {
+    if (client.userId === userId) {
+      try {
+        client.res.write(data);
+      } catch (err) {
+        // ignore write errors; client will close and be removed
+      }
+    }
+  }
+};
+
+const broadcastToRole = (role, event) => {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const [, client] of sseClients) {
+    if (client.role === role) {
+      try {
+        client.res.write(data);
+      } catch (err) {
+        // ignore write errors; client will close and be removed
+      }
+    }
+  }
+};
+
+const broadcastToRider = (riderId, event) => {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const [, client] of sseClients) {
+    if (client.userId === riderId && client.role === 'rider') {
+      try {
+        client.res.write(data);
+      } catch (err) {
+        // ignore write errors; client will close and be removed
+      }
+    }
+  }
+};
+
+// Keep for backward compatibility - broadcasts to all rider clients only
 const broadcastRiderEvent = (event) => {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const res of sseClients) {
-    try {
-      res.write(data);
-    } catch (err) {
-      // ignore write errors; client will close and be removed
+  for (const [, client] of sseClients) {
+    if (client.role === 'rider') {
+      try {
+        client.res.write(data);
+      } catch (err) {
+        // ignore write errors; client will close and be removed
+      }
     }
   }
 };
@@ -1163,11 +1486,25 @@ app.post('/api/rider/accept/:id', requireAuth('rider'), async (req, res) => {
     if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const riderOrder = rows[0];
 
-    // 2. Update main orders table
-    await pool.query(
-      "UPDATE public.orders SET status = 'accepted', assigned_rider_id = $1, updated_at = now() WHERE id = $2",
+    // 2. Update main orders table and get customer_id for notification
+    const { rows: mainOrderRows } = await pool.query(
+      "UPDATE public.orders SET status = 'accepted', assigned_rider_id = $1, updated_at = now() WHERE id = $2 RETURNING customer_id",
       [riderId, id]
     );
+
+    // 3. Send notification to customer that rider has accepted their order (ONLY to that customer)
+    if (mainOrderRows && mainOrderRows.length > 0 && mainOrderRows[0].customer_id) {
+      const customerId = mainOrderRows[0].customer_id;
+      createNotification(
+        customerId,
+        'order_assigned',
+        'Rider Accepted Your Order 🚴',
+        `Your order #${id.slice(-6).toUpperCase()} has been accepted. Your delivery is on the way!`,
+        { orderId: id }
+      ).catch(() => {});
+      // Broadcast only to this specific customer
+      broadcastToUser(customerId, { type: 'notification.new', notification: { type: 'order_assigned', orderId: id } }).catch(() => {});
+    }
 
     broadcastRiderEvent({ type: 'order.updated', order: riderOrder });
     return res.json({ ok: true, order: riderOrder });
@@ -1190,12 +1527,29 @@ app.post('/api/rider/update/:id', requireAuth('rider'), async (req, res) => {
     if (!rows || rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const riderOrder = rows[0];
 
-    // 2. Update main orders table as well — if delivered, mark as completed for reports
+    // 2. Update main orders table and get customer_id for notification
     const mainStatus = (status === 'delivered') ? 'completed' : status;
-    await pool.query(
-      "UPDATE public.orders SET status = $1, updated_at = now() WHERE id = $2",
+    const { rows: mainOrderRows } = await pool.query(
+      "UPDATE public.orders SET status = $1, updated_at = now() WHERE id = $2 RETURNING customer_id",
       [mainStatus, id]
     );
+
+    // 3. Send real-time notifications to customer based on status (ONLY to that customer)
+    if (mainOrderRows && mainOrderRows.length > 0 && mainOrderRows[0].customer_id) {
+      const customerId = mainOrderRows[0].customer_id;
+      const statusMessages = {
+        'picked_up': { title: 'Your Order Picked Up 📦', message: 'Your order is now on the way to you!' },
+        'on_the_way': { title: 'Delivery in Progress 🚴', message: 'Your order is on the way. Track your delivery on the map!' },
+        'arrived': { title: 'Rider Arrived 🎯', message: 'Your rider has arrived at your location with your order!' },
+        'delivered': { title: 'Order Delivered ✅', message: 'Your order has been delivered. Enjoy your meal!' }
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        createNotification(customerId, 'order_status', msg.title, msg.message, { orderId: id, status }).catch(() => {});
+        // Broadcast only to this specific customer
+        broadcastToUser(customerId, { type: 'notification.new', notification: { type: 'order_status', orderId: id, status } }).catch(() => {});
+      }
+    }
 
     broadcastRiderEvent({ type: 'order.updated', order: { ...riderOrder, status: mainStatus } });
 
@@ -1243,11 +1597,13 @@ app.get('/api/rider/stream', requireAuth('rider'), (req, res) => {
   // Send a comment to keep connection alive
   res.write(': connected\n\n');
 
-  sseClients.add(res);
+  // Store connection with user info to prevent data leaks
+  const clientId = crypto.randomUUID();
+  sseClients.set(clientId, { res, userId: req.user.id, role: req.user.role || 'rider' });
 
   // remove when client disconnects
   req.on('close', () => {
-    sseClients.delete(res);
+    sseClients.delete(clientId);
   });
 });
 
@@ -1262,16 +1618,28 @@ app.get('/api/stream', requireAuth(), (req, res) => {
   // Send a comment to keep connection alive
   res.write(': connected\n\n');
 
-  sseClients.add(res);
+  // Store connection with user info to prevent data leaks
+  const clientId = crypto.randomUUID();
+  sseClients.set(clientId, { res, userId: req.user.id, role: req.user.role || 'customer' });
 
   // remove when client disconnects
   req.on('close', () => {
-    sseClients.delete(res);
+    sseClients.delete(clientId);
   });
 });
 
 // SSE heartbeat to keep connections alive and cleanup dead clients
 setInterval(() => {
+  // Also clean up any dead connections
+  const deadClients = [];
+  for (const [clientId, client] of sseClients) {
+    if (!client || !client.res) {
+      deadClients.push(clientId);
+    }
+  }
+  for (const clientId of deadClients) {
+    sseClients.delete(clientId);
+  }
   const toRemove = [];
   for (const res of sseClients) {
     try {
@@ -1337,7 +1705,7 @@ app.post('/api/admin/products', requireAuth('admin'), upload.fields([
   { name: 'secondary_image', maxCount: 1 },
 ]), async (req, res) => {
   try {
-    const { name, description, price, category_id, preparation_time, is_featured } = req.body;
+    const { name, description, price, category_id, preparation_time, is_featured, tags, tier_pricing } = req.body;
 
     // Validate required fields
     if (!name || !price || !category_id) {
@@ -1372,8 +1740,11 @@ app.post('/api/admin/products', requireAuth('admin'), upload.fields([
       secondaryImageUrl = result.paths.webp || result.paths.jpeg;
     }
 
+    const normalizedTags = parseProductTags(tags);
+    const normalizedTierPricing = parseTierPricing(tier_pricing);
+
     const { rows } = await pool.query(
-      'INSERT INTO public.menu_items (name, description, price, category_id, image_url, secondary_image_url, is_available) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      'INSERT INTO public.menu_items (name, description, price, category_id, image_url, secondary_image_url, is_featured, tags, tier_pricing, is_available) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10) RETURNING *',
       [
         name,
         description || null,
@@ -1381,6 +1752,9 @@ app.post('/api/admin/products', requireAuth('admin'), upload.fields([
         category_id,
         imageUrl,
         secondaryImageUrl,
+        is_featured === 'true' || is_featured === true,
+        normalizedTags,
+        JSON.stringify(normalizedTierPricing),
         true // default to available on creation
       ]
     );
@@ -1398,7 +1772,7 @@ app.put('/api/admin/products/:id', requireAuth('admin'), upload.fields([
   { name: 'secondary_image', maxCount: 1 },
 ]), async (req, res) => {
   try {
-    const { name, description, price, category_id, preparation_time, is_featured, is_available } = req.body;
+    const { name, description, price, category_id, preparation_time, is_featured, is_available, tags, tier_pricing } = req.body;
     const productId = req.params.id;
 
     // Get current product
@@ -1447,8 +1821,11 @@ app.put('/api/admin/products/:id', requireAuth('admin'), upload.fields([
       secondaryImageUrl = result.paths.webp || result.paths.jpeg;
     }
 
+    const normalizedTags = tags !== undefined ? parseProductTags(tags) : (currentProduct.rows[0].tags || []);
+    const normalizedTierPricing = tier_pricing !== undefined ? parseTierPricing(tier_pricing) : (currentProduct.rows[0].tier_pricing || []);
+
     const { rows } = await pool.query(
-      'UPDATE public.menu_items SET name = $1, description = $2, price = $3, category_id = $4, image_url = $5, secondary_image_url = $6, is_available = $7, updated_at = NOW() WHERE id = $8 RETURNING *',
+      'UPDATE public.menu_items SET name = $1, description = $2, price = $3, category_id = $4, image_url = $5, secondary_image_url = $6, is_featured = $7, tags = $8, tier_pricing = $9::jsonb, is_available = $10, updated_at = NOW() WHERE id = $11 RETURNING *',
       [
         name || currentProduct.rows[0].name,
         description !== undefined ? description : currentProduct.rows[0].description,
@@ -1456,6 +1833,9 @@ app.put('/api/admin/products/:id', requireAuth('admin'), upload.fields([
         category_id || currentProduct.rows[0].category_id,
         imageUrl,
         secondaryImageUrl,
+        is_featured !== undefined ? (is_featured === 'true' || is_featured === true) : currentProduct.rows[0].is_featured,
+        normalizedTags,
+        JSON.stringify(normalizedTierPricing),
         is_available !== undefined ? (is_available === 'true' || is_available === true) : currentProduct.rows[0].is_available,
         productId
       ]
@@ -1535,23 +1915,28 @@ app.post('/api/admin/categories', requireAuth('admin'), upload.single('image'), 
       imageUrl = result.paths.webp || result.paths.jpeg;
     }
 
-    await pool.query('BEGIN');
+    const client = await pool.connect();
     try {
-      const { rows } = await pool.query(
-        'INSERT INTO public.menu_categories (name, description, image_url, display_order, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [
-          name,
-          description || null,
-          imageUrl,
-          display_order ? parseInt(display_order) : 0,
-          is_active === 'true' || is_active === true
-        ]
-      );
-      await pool.query('COMMIT');
-      res.status(201).json(rows[0]);
-    } catch (err) {
-      await pool.query('ROLLBACK');
-      throw err;
+      await client.query('BEGIN');
+      try {
+        const { rows } = await client.query(
+          'INSERT INTO public.menu_categories (name, description, image_url, display_order, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+          [
+            name,
+            description || null,
+            imageUrl,
+            display_order ? parseInt(display_order) : 0,
+            is_active === 'true' || is_active === true
+          ]
+        );
+        await client.query('COMMIT');
+        res.status(201).json(rows[0]);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      client.release();
     }
   } catch (err) {
     console.error('Failed to create category:', err);
@@ -1658,16 +2043,28 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const FIXED_DELIVERY_FEE = 50;
+    const ALLOWED_CITY = 'Nakuru';
     const {
       subtotal = 0,
       discount = 0,
       notes = null,
       promotion_code = null,
+      promo_code = null,
       payment_method = 'cash',
       phone = null,
       delivery_address = null,
       items = []
     } = req.body || {};
+
+    // Validate delivery city - only Nakuru orders accepted
+    const deliveryCity = (delivery_address && (delivery_address.city || delivery_address.City)) || ALLOWED_CITY;
+    if (deliveryCity.toLowerCase() !== ALLOWED_CITY.toLowerCase()) {
+      return res.status(400).json({
+        error: `Delivery not available in ${deliveryCity}`,
+        message: `We currently only accept orders within ${ALLOWED_CITY}. Please select a delivery address in ${ALLOWED_CITY}.`,
+        allowedCity: ALLOWED_CITY
+      });
+    }
 
     let deliveryAddressId = null;
     if (delivery_address && delivery_address.id) {
@@ -1680,7 +2077,7 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
           userId,
           delivery_address.label || 'Home',
           delivery_address.street,
-          delivery_address.city || 'Nairobi',
+          delivery_address.city || 'Nakuru',
           delivery_address.phone || null,
           delivery_address.instructions || null,
           delivery_address.latitude || delivery_address.lat || null,
@@ -1704,7 +2101,7 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
       discount,
       Math.max(0, Number(subtotal || 0) + FIXED_DELIVERY_FEE - Number(discount || 0)),
       notes,
-      promotion_code,
+      promotion_code || promo_code,
       payment_method,
       initialStatus,
       phone
@@ -1730,8 +2127,15 @@ app.post('/api/orders', requireAuth(), async (req, res) => {
 
     res.status(201).json({ success: true, orderId });
 
-    // Notify customer about order placement
+    // Notify customer about order placement (only to this customer)
     createNotification(userId, 'order_confirmed', 'Order Placed! 🛒', `Your order #${String(orderId).slice(-6).toUpperCase()} has been placed successfully.`, { orderId }).catch(() => { });
+    // Also broadcast to customer's SSE connection
+    broadcastToUser(userId, { type: 'notification.new', notification: { type: 'order_confirmed', orderId } }).catch(() => { });
+
+    // Notify admin about new order (only admins receive this)
+    createBroadcastNotification('admin', 'new_order', 'New Order Received 📋', `A new order #${String(orderId).slice(-6).toUpperCase()} has been received!`, { orderId }).catch(() => { });
+    // Broadcast to all admin clients only
+    broadcastToRole('admin', { type: 'notification.new', notification: { type: 'new_order', orderId } }).catch(() => { });
   } catch (err) {
     console.error('Failed to create order', err);
     logger.error('Failed to create order', err);
@@ -2010,8 +2414,9 @@ app.get('/api/admin/reports', requireAuth('admin'), async (req, res) => {
     // 3. Weekly trend (last 7 days)
     const trendQuery = `
       SELECT 
-        TO_CHAR(date, 'Mon') as month,
+        TO_CHAR(date, 'Dy') as label,
         COALESCE(SUM(o.total), 0) as revenue,
+        COUNT(o.id) as order_count,
         DATE(date) as date
       FROM (
         SELECT CURRENT_DATE - i as date
@@ -2023,21 +2428,32 @@ app.get('/api/admin/reports', requireAuth('admin'), async (req, res) => {
     `;
     const { rows: trendRows } = await pool.query(trendQuery);
 
+    const topItemsQuery = `
+      SELECT
+        COALESCE(oi.name, mi.name, 'Item') as name,
+        COALESCE(SUM(oi.quantity), 0) as quantity_sold,
+        COALESCE(SUM(oi.total_price), 0) as revenue
+      FROM public.order_items oi
+      LEFT JOIN public.menu_items mi ON mi.id = oi.menu_item_id
+      LEFT JOIN public.orders o ON o.id = oi.order_id
+      WHERE o.status IN ('delivered', 'completed')
+      GROUP BY COALESCE(oi.name, mi.name, 'Item')
+      ORDER BY quantity_sold DESC, revenue DESC
+      LIMIT 6
+    `;
+    const { rows: topItemRows } = await pool.query(topItemsQuery);
+
     res.json({
       stats: statsRows[0],
       categories: categoryRows,
-      trend: trendRows
+      trend: trendRows,
+      top_items: topItemRows
     });
   } catch (err) {
     console.error('Failed to fetch reports', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
-
-app.post('/api/admin/riders', requireAuth('admin'), async (req, res) => {
-
-  try {
-    const { email, name, phone, password } = req.body || {};
 
 // Admin: get free delivery setting
 app.get('/api/admin/settings/free_delivery', requireAuth('admin'), async (req, res) => {
@@ -2074,15 +2490,20 @@ app.put('/api/admin/settings/free_delivery', requireAuth('admin'), async (req, r
     return res.status(500).json({ error: 'Failed to update setting' });
   }
 });
-    if (!email || !name) return res.status(400).json({ error: 'email and name are required' });
+
+app.post('/api/admin/riders', requireAuth('admin'), async (req, res) => {
+  try {
+    const { email, name, phone, password } = req.body || {};
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !name) return res.status(400).json({ error: 'email and name are required' });
 
     // generate a password if not provided
     const pwd = password || crypto.randomBytes(6).toString('hex');
-    const passwordHash = crypto.createHash('sha256').update(pwd).digest('hex');
+    const passwordHash = hashPassword(pwd);
 
     const { rows } = await pool.query(
       'INSERT INTO public.users (email, password_hash, name, phone, role, is_active, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,true, now(), now()) RETURNING id, email, name, phone, role',
-      [email, passwordHash, name, phone || null, 'rider']
+      [normalizedEmail, passwordHash, name, phone || null, 'rider']
     );
 
     const rider = rows[0];
@@ -2121,12 +2542,13 @@ app.get('/api/admin/customers', requireAuth('admin'), async (req, res) => {
 app.post('/api/admin/customers', requireAuth('admin'), async (req, res) => {
   try {
     const { email, name, phone, password } = req.body || {};
-    if (!email || !name) return res.status(400).json({ error: 'email and name are required' });
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !name) return res.status(400).json({ error: 'email and name are required' });
     const pwd = password || crypto.randomBytes(6).toString('hex');
-    const passwordHash = crypto.createHash('sha256').update(pwd).digest('hex');
+    const passwordHash = hashPassword(pwd);
     const { rows } = await pool.query(
       'INSERT INTO public.users (email, password_hash, name, phone, role, is_active, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,true, now(), now()) RETURNING id, email, name, phone, role',
-      [email, passwordHash, name, phone || null, 'customer']
+      [normalizedEmail, passwordHash, name, phone || null, 'customer']
     );
     const customer = rows[0];
     res.status(201).json({ customer, password: pwd });
@@ -2150,11 +2572,21 @@ app.delete('/api/admin/customers/:id', requireAuth('admin'), async (req, res) =>
 // Admin: clear all orders/transactions (dangerous - admin only)
 app.delete('/api/admin/orders/clear', requireAuth('admin'), async (req, res) => {
   try {
-    await pool.query('BEGIN');
-    await pool.query('DELETE FROM public.order_items');
-    await pool.query('DELETE FROM public.orders');
-    await pool.query('COMMIT');
-    res.json({ success: true, message: 'All orders and order items cleared' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM public.order_items');
+        await client.query('DELETE FROM public.orders');
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'All orders and order items cleared' });
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => { });
+        throw err;
+      }
+    } finally {
+      client.release();
+    }
   } catch (err) {
     await pool.query('ROLLBACK').catch(() => {});
     console.error('Failed to clear orders', err);
@@ -2323,10 +2755,12 @@ app.put('/api/rider/location', requireAuth('rider'), (req, res) => {
 app.get('/api/orders/:id/rider-location', requireAuth(), async (req, res) => {
   try {
     const { id: orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Check if order exists and get assigned_rider_id
+    // Check if order exists and verify authorization
     const { rows } = await pool.query(
-      'SELECT assigned_rider_id FROM public.orders WHERE id = $1',
+      'SELECT assigned_rider_id, customer_id FROM public.orders WHERE id = $1',
       [orderId]
     );
 
@@ -2334,7 +2768,13 @@ app.get('/api/orders/:id/rider-location', requireAuth(), async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const riderId = rows[0].assigned_rider_id;
+    const { assigned_rider_id: riderId, customer_id: customerId } = rows[0];
+
+    // Verify user is authorized: must be the customer or the assigned rider or admin
+    if (userRole !== 'admin' && customerId !== userId && riderId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized to view this rider location' });
+    }
+
     if (!riderId) {
       return res.status(200).json({ latitude: null, longitude: null });
     }
@@ -2482,7 +2922,7 @@ app.post('/api/addresses', requireAuth(), async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO public.customer_addresses (user_id, label, street, city, phone, instructions, latitude, longitude, is_default)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [req.user.id, label || 'Home', street, city || 'Nairobi', phone || null, instructions || null, latitude || null, longitude || null, is_default || false]
+      [req.user.id, label || 'Home', street, city || 'Nakuru', phone || null, instructions || null, latitude || null, longitude || null, is_default || false]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -2627,7 +3067,15 @@ function fetchJson(url, options = {}) {
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {
           try {
-            const parsedBody = data ? JSON.parse(data) : {};
+            let parsedBody = {};
+            if (data) {
+              try {
+                parsedBody = JSON.parse(data);
+              } catch (parseErr) {
+                logger.error('[fetchJson] Failed to parse response', { parseError: parseErr.message });
+                parsedBody = { _rawData: data.substring(0, 500), _parseError: parseErr.message };
+              }
+            }
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
               resolve(parsedBody);
             } else {
@@ -2657,27 +3105,56 @@ function fetchJson(url, options = {}) {
 async function getMpesaAccessToken() {
   const cfg = config.mpesa;
   const now = Date.now();
+  
+  logger.info('Checking MPesa token cache', { hasToken: !!_mpesaTokenCache.accessToken, isExpired: _mpesaTokenCache.expiresAt <= now + 5000 });
+  
   if (_mpesaTokenCache.accessToken && _mpesaTokenCache.expiresAt > now + 5000) {
+    logger.info('Using cached MPesa token');
     return _mpesaTokenCache.accessToken;
   }
 
   if (!cfg.consumerKey || !cfg.consumerSecret) {
+    logger.error('MPesa credentials not configured', { consumerKeySet: !!cfg.consumerKey, consumerSecretSet: !!cfg.consumerSecret });
     throw new Error('MPESA consumer key/secret not configured');
   }
 
   const auth = Buffer.from(`${cfg.consumerKey}:${cfg.consumerSecret}`).toString('base64');
   const url = cfg.oauthUrl;
+  
+  logger.info('Fetching MPesa access token', { url, authLength: auth.length });
 
-  const tokenResp = await fetchJson(url, {
-    method: 'GET',
-    headers: { Authorization: `Basic ${auth}` },
-  });
+  try {
+    const tokenResp = await fetchJson(url, {
+      method: 'GET',
+      headers: { Authorization: `Basic ${auth}` },
+    });
 
-  if (!tokenResp.access_token || !tokenResp.expires_in) throw new Error('Failed to obtain MPESA access token');
+    logger.info('MPesa token response', { hasAccessToken: !!tokenResp.access_token, expiresIn: tokenResp.expires_in });
 
-  _mpesaTokenCache.accessToken = tokenResp.access_token;
-  _mpesaTokenCache.expiresAt = Date.now() + (parseInt(tokenResp.expires_in, 10) - 10) * 1000;
-  return _mpesaTokenCache.accessToken;
+    if (!tokenResp.access_token || !tokenResp.expires_in) {
+      logger.error('Invalid MPesa token response', { tokenResp });
+      throw new Error('Failed to obtain MPESA access token');
+    }
+
+    _mpesaTokenCache.accessToken = tokenResp.access_token;
+    _mpesaTokenCache.expiresAt = Date.now() + (parseInt(tokenResp.expires_in, 10) - 10) * 1000;
+    logger.info('MPesa token cached successfully');
+    return _mpesaTokenCache.accessToken;
+  } catch (err) {
+    console.error('[getMpesaAccessToken] Token fetch error:', {
+      statusCode: err?.statusCode,
+      errorCode: err?.body?.errorCode,
+      errorMessage: err?.body?.errorMessage
+    });
+    const errorInfo = {
+      message: err?.message || String(err),
+      statusCode: err?.statusCode,
+      body: err?.body,
+      stack: err?.stack?.split('\n').slice(0, 2).join('\n')
+    };
+    logger.error('MPesa token fetch failed', errorInfo);
+    throw err;
+  }
 }
 
 function makeTimestamp() {
@@ -2686,28 +3163,70 @@ function makeTimestamp() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-async function initiateStkPush({ amount, phone, accountRef = 'Order', description = 'Payment', callbackPath = '/api/mpesa/callback' }) {
+async function initiateStkPush({ amount, phone, accountRef = 'Order', description = 'Payment', callbackPath = '/api/mpesa/callback', callbackBase }) {
   const cfg = config.mpesa;
+  const configIssues = config.getMpesaValidationErrors(cfg);
+  
+  logger.info('initiateStkPush called', {
+    amount,
+    phone,
+    accountRef,
+    description,
+    configKeys: { 
+      consumerKey: !!cfg.consumerKey,
+      consumerSecret: !!cfg.consumerSecret,
+      shortcode: !!cfg.shortcode,
+      passkey: !!cfg.passkey,
+      partyB: !!cfg.partyB,
+      transactionType: cfg.transactionType,
+      sandbox: cfg.sandbox
+    }
+  });
+  
+  if (configIssues.length > 0) {
+    logger.error('MPesa configuration invalid', {
+      issues: configIssues,
+      consumerKey: !!cfg.consumerKey,
+      consumerSecret: !!cfg.consumerSecret,
+      shortcode: !!cfg.shortcode,
+      passkey: !!cfg.passkey,
+      partyB: !!cfg.partyB,
+      transactionType: cfg.transactionType,
+      sandbox: cfg.sandbox
+    });
+    const err = new Error(`MPesa configuration error: ${configIssues.join(' ')}`);
+    err.statusCode = 503;
+    throw err;
+  }
+
   const token = await getMpesaAccessToken();
   const timestamp = makeTimestamp();
   const password = Buffer.from(`${cfg.shortcode}${cfg.passkey}${timestamp}`).toString('base64');
 
-  const callbackBase = cfg.callbackBase || `${config.server.isDev ? `http://localhost:${config.server.port}` : ''}`;
-  const callbackUrl = (callbackBase && callbackBase.endsWith('/')) ? `${callbackBase.replace(/\/$/, '')}${callbackPath}` : `${callbackBase}${callbackPath}`;
+  const resolvedCallbackBase = cfg.callbackBase || callbackBase || (config.server.isDev ? `http://localhost:${config.server.port}` : '');
+  const callbackUrl = resolvedCallbackBase
+    ? `${resolvedCallbackBase.replace(/\/$/, '')}${callbackPath}`
+    : '';
+
 
   const payload = {
     BusinessShortCode: cfg.shortcode,
     Password: password,
     Timestamp: timestamp,
-    TransactionType: 'CustomerPayBillOnline',
+    TransactionType: cfg.transactionType,
     Amount: Number(amount),
     PartyA: phone,
-    PartyB: cfg.shortcode,
+    PartyB: cfg.partyB,
     PhoneNumber: phone,
     CallBackURL: callbackUrl || '',
     AccountReference: accountRef,
     TransactionDesc: description,
   };
+
+  logger.info('MPesa STK payload prepared', { 
+    payload: { ...payload, Password: '***' },
+    stkUrl: cfg.stkUrl
+  });
 
   const resp = await fetchJson(cfg.stkUrl, {
     method: 'POST',
@@ -2728,8 +3247,26 @@ app.post('/api/mpesa/stk', requireAuth(), async (req, res) => {
     const normalizedPhone = phone.replace(/[^0-9]/g, '');
     // Ensure phone is in 2547XXXXXXXX or 2541XXXXXXXX format
     const msisdn = normalizedPhone.startsWith('0') ? `254${normalizedPhone.slice(1)}` : (normalizedPhone.startsWith('7') || normalizedPhone.startsWith('1') ? `254${normalizedPhone}` : normalizedPhone);
+    if (!/^254[17]\d{8}$/.test(msisdn)) {
+      return res.status(400).json({ error: 'Invalid phone number' });
+    }
 
-    const result = await initiateStkPush({ amount, phone: msisdn, accountRef, description });
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const proto = typeof forwardedProto === 'string' && forwardedProto.length > 0 ? forwardedProto : (req.protocol || 'https');
+    const host = typeof forwardedHost === 'string' && forwardedHost.length > 0 ? forwardedHost : req.headers.host;
+    const inferredCallbackBase = typeof host === 'string' && host.length > 0 ? `${proto}://${host}` : '';
+
+    const result = await initiateStkPush({
+      amount,
+      phone: msisdn,
+      accountRef,
+      description,
+      callbackBase: inferredCallbackBase,
+    });
+
+    let saved = null;
+    let persistenceWarning = null;
 
     // Persist STK request to DB
     try {
@@ -2740,22 +3277,32 @@ app.post('/api/mpesa/stk', requireAuth(), async (req, res) => {
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
       `, [orderId || null, result.MerchantRequestID || null, result.CheckoutRequestID || null, result.ResponseCode || null, result.ResponseDescription || null, amount, msisdn, accountRef || null, description || null, result]);
 
-      const saved = insertRes.rows[0];
+      saved = insertRes.rows[0];
 
       if (orderId) {
         // update order payment_status to processing
         await pool.query('UPDATE public.orders SET payment_status = $1, payment_method = $2, updated_at = now() WHERE id = $3', ['processing', 'mpesa', orderId]).catch(() => { });
       }
-
-      return res.json({ success: true, provider: 'mpesa', result, stkRequest: saved });
     } catch (err) {
       logger.error('Failed to save MPesa STK request', err);
-      return res.status(500).json({ error: 'STK push sent but failed to persist request', details: err.message || err });
+      persistenceWarning = 'STK push was sent, but the request could not be saved locally.';
     }
+
+    return res.json({ success: true, provider: 'mpesa', result, stkRequest: saved, warning: persistenceWarning });
   } catch (err) {
-    const details = err.body ? JSON.stringify(err.body) : (err.message || String(err));
-    logger.error('Failed to initiate MPesa STK push', { error: err.message, body: err.body, statusCode: err.statusCode });
-    return res.status(500).json({ error: 'Failed to initiate STK push', details });
+    const errorInfo = {
+      message: err?.message || String(err),
+      statusCode: err?.statusCode,
+      body: err?.body,
+      stack: err?.stack?.split('\n').slice(0, 3).join('\n')
+    };
+    logger.error('Failed to initiate MPesa STK push', errorInfo);
+    const providerMessage = err?.body?.errorMessage || err?.body?.errorMessage?.message || err?.body?.ResponseDescription || err?.body?.responseDescription;
+    const errorMessage =
+      providerMessage ||
+      (err.statusCode === 503 ? err?.message || 'MPesa is not configured correctly on the server.' : null) ||
+      `Unable to start payment right now. Server error: ${err?.message || 'Unknown'}.`;
+    return res.status(err.statusCode && Number.isInteger(err.statusCode) ? err.statusCode : 500).json({ error: errorMessage });
   }
 });
 
@@ -2790,6 +3337,31 @@ app.get('/api/mpesa/callbacks', requireAuth('admin'), async (req, res) => {
   } catch (err) {
     logger.error('Failed to fetch mpesa callbacks', err);
     res.status(500).json({ error: 'DB error' });
+  }
+});
+
+// Admin: clear all M-Pesa transactions (dangerous - admin only)
+app.delete('/api/admin/mpesa/clear', requireAuth('admin'), async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      try {
+        await client.query('DELETE FROM public.mpesa_stk_callbacks');
+        await client.query('DELETE FROM public.mpesa_stk_requests');
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'All M-Pesa transactions cleared' });
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => { });
+        throw err;
+      }
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    await pool.query('ROLLBACK').catch(() => {});
+    console.error('Failed to clear M-Pesa transactions', err);
+    res.status(500).json({ error: 'Failed to clear M-Pesa transactions' });
   }
 });
 
@@ -2856,6 +3428,10 @@ async function processMpesaCallback(body) {
                 await createNotification(orderUserRows[0].customer_id, 'payment_received', 'Payment Received ✅', `Your M-Pesa payment of KES ${amount || ''} has been received.`, { orderId: stkRequest.order_id });
               }
             } catch (nErr) { /* ignore */ }
+            // Notify admin about payment received (ONLY to admins)
+            await createBroadcastNotification('admin', 'payment_received', 'Payment Received 💰', `M-Pesa payment of KES ${amount || 'N/A'} received for order #${String(stkRequest.order_id).slice(-6).toUpperCase()}.`, { orderId: stkRequest.order_id, amount }).catch(() => {});
+            // Broadcast to all admin clients only
+            broadcastToRole('admin', { type: 'notification.new', notification: { type: 'payment_received', orderId: stkRequest.order_id, amount } }).catch(() => {});
             // Broadcast payment update to connected clients
             try {
               const { rows: updatedRows } = await pool.query('SELECT id, status, payment_status FROM public.orders WHERE id = $1', [stkRequest.order_id]);
@@ -2976,11 +3552,10 @@ app.put('/api/auth/change-password', requireAuth(), async (req, res) => {
     const { rows } = await pool.query('SELECT password_hash FROM public.users WHERE id = $1', [req.user.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-    const bcrypt = require('bcryptjs');
-    const isValid = await bcrypt.compare(current_password, rows[0].password_hash);
+    const isValid = await verifyPasswordHash(current_password, rows[0].password_hash);
     if (!isValid) return res.status(400).json({ error: 'Current password is incorrect' });
 
-    const newHash = await bcrypt.hash(new_password, 12);
+    const newHash = hashPassword(new_password);
     await pool.query('UPDATE public.users SET password_hash = $1, updated_at = now() WHERE id = $2', [newHash, req.user.id]);
     res.json({ ok: true, message: 'Password changed successfully' });
   } catch (err) {
@@ -3025,22 +3600,29 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     );
 
     // Try to send email via Resend if configured
-    if (process.env.RESEND_API_KEY) {
+    if (config.email.apiKey) {
       try {
+        const resetLink = `${config.server.url}/reset-password?token=${resetToken}`;
         const result = await resend.emails.send({
-          from: 'Kuku ni Sisi <onboarding@resend.dev>',
+          from: config.email.from,
           to: [email],
+          reply_to: config.email.supportEmail,
           subject: 'Reset Your Password - Kuku ni Sisi',
-          html: getPasswordResetTemplate(user.name, resetCode),
+          html: getPasswordResetTemplate(user.name, resetLink),
         });
-        console.log('Password reset email sent successfully:', result);
+        if (result.error) {
+          console.error('Resend Error (Reset):', result.error);
+        } else {
+          console.log('Password reset email sent successfully:', result.data?.id);
+        }
       } catch (emailErr) {
-        console.error('CRITICAL: Failed to send reset email via Resend:', emailErr.message, emailErr.response?.data || '');
+        console.error('CRITICAL: Failed to send reset email via Resend:', emailErr.message);
         // Still return success — don't reveal email delivery status
       }
     } else {
+      const resetLink = `${config.server.url}/reset-password?token=${resetToken}`;
       // No email service configured — log the token for development
-      console.log(`[DEV] Password reset requested for ${email}. Reset token: ${resetToken} (code: ${resetCode})`);
+      console.log(`[DEV] Password reset requested for ${email}. Link: ${resetLink}`);
     }
 
     res.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
@@ -3064,8 +3646,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     );
     if (rows.length === 0) return res.status(400).json({ error: 'Invalid or expired reset token' });
 
-    const bcrypt = require('bcryptjs');
-    const hash = await bcrypt.hash(new_password, 12);
+    const hash = hashPassword(new_password);
     await pool.query(
       'UPDATE public.users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL, updated_at = now() WHERE id = $2',
       [hash, rows[0].id]
@@ -3078,6 +3659,237 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
+// Resend welcome email
+app.post('/api/auth/resend-welcome', requireAuth(), async (req, res) => {
+  try {
+    const user = req.user; // From requireAuth middleware
+    
+    if (!config.email.apiKey) {
+      return res.status(400).json({ error: 'Email service not configured' });
+    }
+
+    const result = await resend.emails.send({
+      from: config.email.from,
+      to: [user.email],
+      reply_to: config.email.supportEmail,
+      subject: 'Welcome to Kuku ni Sisi! 🍗',
+      html: getWelcomeTemplate(user.name || 'Friend'),
+    });
+
+    if (result.error) {
+      console.error('Resend Error (Welcome Resend):', result.error);
+      return res.status(500).json({ error: 'Failed to send welcome email' });
+    }
+
+    console.log('Welcome email resent successfully:', result.data?.id);
+    res.json({ success: true, message: 'Welcome email sent successfully' });
+  } catch (err) {
+    console.error('CRITICAL: Failed to resend welcome email:', err.message);
+    logger.error('Failed to resend welcome email', err);
+    res.status(500).json({ error: 'Failed to resend welcome email' });
+  }
+});
+
+// Resend password reset email
+app.post('/api/auth/resend-reset', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    if (!config.email.apiKey) {
+      return res.status(400).json({ error: 'Email service not configured' });
+    }
+
+    // Check if user exists
+    const { rows: userRows } = await pool.query(
+      'SELECT id, name FROM public.users WHERE LOWER(email) = LOWER($1)',
+      [email]
+    );
+
+    if (userRows.length === 0) {
+      // Don't reveal if email exists
+      return res.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
+    }
+
+    const user = userRows[0];
+    
+    // Generate a new reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await pool.query(
+      'UPDATE public.users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3',
+      [resetToken, expires, user.id]
+    );
+
+    try {
+      const resetLink = `${config.server.url}/reset-password?token=${resetToken}`;
+      const result = await resend.emails.send({
+        from: config.email.from,
+        to: [email],
+        reply_to: config.email.supportEmail,
+        subject: 'Reset Your Password - Kuku ni Sisi',
+        html: getPasswordResetTemplate(user.name, resetLink),
+      });
+
+      if (result.error) {
+        console.error('Resend Error (Reset Resend):', result.error);
+      } else {
+        console.log('Password reset email resent successfully:', result.data?.id);
+      }
+    } catch (emailErr) {
+      console.error('CRITICAL: Failed to resend reset email via Resend:', emailErr.message);
+    }
+
+    res.json({ ok: true, message: 'If an account exists with that email, a reset link has been sent.' });
+  } catch (err) {
+    console.error('Failed to process resend-reset:', err.message);
+    logger.error('Failed to process resend-reset', err);
+    res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+  }
+});
+
+// ============================================
+// BACKUP & EXPORT ENDPOINTS (Admin Only)
+// ============================================
+
+// Export all users as CSV
+app.get('/api/admin/export/users', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows: users } = await pool.query(
+      `SELECT id, email, name, phone, role, is_active, last_login, created_at, updated_at 
+       FROM public.users 
+       ORDER BY created_at DESC`
+    );
+
+    // Create CSV header
+    const headers = ['ID', 'Email', 'Name', 'Phone', 'Role', 'Active', 'Last Login', 'Created At', 'Updated At'];
+    const csvRows = users.map(u => [
+      u.id,
+      u.email,
+      u.name || '',
+      u.phone || '',
+      u.role,
+      u.is_active ? 'Yes' : 'No',
+      u.last_login ? new Date(u.last_login).toISOString() : '',
+      new Date(u.created_at).toISOString(),
+      new Date(u.updated_at).toISOString()
+    ]);
+
+    const csv = [headers, ...csvRows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="users_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Failed to export users', err);
+    res.status(500).json({ error: 'Failed to export users' });
+  }
+});
+
+// Export all transactions (orders + M-Pesa) as CSV
+app.get('/api/admin/export/transactions', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows: orders } = await pool.query(
+      `SELECT 
+        o.id,
+        o.customer_id,
+        u.name as customer_name,
+        u.email as customer_email,
+        o.subtotal,
+        o.delivery_fee,
+        o.discount,
+        o.total,
+        o.payment_method,
+        o.status,
+        o.created_at,
+        o.updated_at
+       FROM public.orders o
+       LEFT JOIN public.users u ON o.customer_id = u.id
+       ORDER BY o.created_at DESC`
+    );
+
+    // Create CSV header
+    const headers = ['Order ID', 'Customer ID', 'Customer Name', 'Customer Email', 'Subtotal', 'Delivery Fee', 'Discount', 'Total', 'Payment Method', 'Status', 'Created At', 'Updated At'];
+    const csvRows = orders.map(o => [
+      o.id,
+      o.customer_id || '',
+      o.customer_name || '',
+      o.customer_email || '',
+      o.subtotal || 0,
+      o.delivery_fee || 0,
+      o.discount || 0,
+      o.total || 0,
+      o.payment_method || '',
+      o.status,
+      new Date(o.created_at).toISOString(),
+      new Date(o.updated_at).toISOString()
+    ]);
+
+    const csv = [headers, ...csvRows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="transactions_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Failed to export transactions', err);
+    res.status(500).json({ error: 'Failed to export transactions' });
+  }
+});
+
+// Export M-Pesa payments as CSV
+app.get('/api/admin/export/mpesa', requireAuth('admin'), async (req, res) => {
+  try {
+    const { rows: payments } = await pool.query(
+      `SELECT 
+        cb.id,
+        cb.merchant_request_id,
+        cb.checkout_request_id,
+        cb.result_code,
+        cb.result_desc,
+        cb.mpesa_receipt_number,
+        cb.amount,
+        cb.phone,
+        cb.transaction_date,
+        cb.created_at
+       FROM public.mpesa_stk_callbacks cb
+       ORDER BY cb.created_at DESC`
+    );
+
+    // Create CSV header
+    const headers = ['Payment ID', 'Merchant Request ID', 'Checkout Request ID', 'Result Code', 'Result Description', 'M-Pesa Receipt', 'Amount', 'Phone', 'Transaction Date', 'Created At'];
+    const csvRows = payments.map(p => [
+      p.id,
+      p.merchant_request_id || '',
+      p.checkout_request_id || '',
+      p.result_code,
+      p.result_desc || '',
+      p.mpesa_receipt_number || '',
+      p.amount || 0,
+      p.phone || '',
+      p.transaction_date || '',
+      new Date(p.created_at).toISOString()
+    ]);
+
+    const csv = [headers, ...csvRows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="mpesa_payments_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Failed to export M-Pesa payments', err);
+    res.status(500).json({ error: 'Failed to export M-Pesa payments' });
+  }
+});
 
 // ============================================
 // ERROR HANDLING MIDDLEWARE

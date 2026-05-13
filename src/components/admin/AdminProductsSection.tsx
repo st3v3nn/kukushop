@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getImageURL, apiFetch } from '@/lib/api';
+import { getImageURL, apiFetch, getMenuItemStartingPrice, getProductVariants } from '@/lib/api';
 import { Trash2, Edit2, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,8 @@ interface Product {
   is_available: boolean;
   isAvailable?: boolean;
   preparation_time: number;
+  tags?: string[];
+  tier_pricing?: { name?: string; tier_name?: string; min_quantity?: number; price: number }[];
 }
 
 interface ProductCategory {
@@ -45,6 +47,12 @@ export const AdminProductsSection = () => {
     fetchProducts();
     fetchCategories();
   }, []);
+
+  const handleImageRenderError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget;
+    target.onerror = null;
+    target.src = '/placeholder.svg';
+  };
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -81,7 +89,8 @@ export const AdminProductsSection = () => {
       return (
         product.name.toLowerCase().includes(query) ||
         (product.description || '').toLowerCase().includes(query) ||
-        categoryName.toLowerCase().includes(query)
+        categoryName.toLowerCase().includes(query) ||
+        (product.tags || []).some((tag) => tag.toLowerCase().includes(query))
       );
     });
   }, [products, categoryNameById, query]);
@@ -207,7 +216,8 @@ export const AdminProductsSection = () => {
                   <img
                     src={getImageURL(product.image_url)}
                     alt={product.name}
-                  className="w-full h-48 object-cover"
+                    className="w-full h-48 object-cover"
+                    onError={handleImageRenderError}
                   />
                 )}
               </div>
@@ -219,8 +229,8 @@ export const AdminProductsSection = () => {
 
                 <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
                   <div>
-                    <span className="text-gray-500">Price:</span>
-                    <p className="font-semibold">KES {parseFloat(String(product.price)).toFixed(2)}</p>
+                    <span className="text-gray-500">{getProductVariants(product).length > 0 ? 'Starts at:' : 'Price:'}</span>
+                    <p className="font-semibold">KES {getMenuItemStartingPrice(product).toFixed(2)}</p>
                   </div>
                   <div>
                     <span className="text-gray-500">Status:</span>
@@ -229,6 +239,26 @@ export const AdminProductsSection = () => {
                     </p>
                   </div>
                 </div>
+
+                {getProductVariants(product).length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {getProductVariants(product).map((variant) => (
+                      <span key={variant.id} className="rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-foreground">
+                        {variant.name} • KES {variant.price.toFixed(2)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {(product.tags || []).length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1">
+                    {product.tags!.map((tag) => (
+                      <span key={tag} className="rounded-full bg-muted px-2 py-1 text-xs capitalize text-muted-foreground">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 <div className="flex gap-2">
                   <Button

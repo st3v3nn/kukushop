@@ -6,5 +6,4 @@ dist
 /.cache
 /.idea
 coverage
-public
 src/**/*.map

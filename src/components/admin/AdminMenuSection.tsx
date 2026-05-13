@@ -11,25 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PriceDisplay } from '@/components/ui/PriceDisplay';
 import { toast } from 'sonner';
 
-// Helper to get API base URL (relative for production, absolute for dev)
-const getAPIBaseURL = () => import.meta.env.VITE_API_URL || '/api';
-
-// Helper to construct image URLs - handles both dev (different ports) and production (same origin)
-const getImageURL = (path: string) => {
-  if (path.startsWith('http')) return path;
-  
-  const apiBase = getAPIBaseURL();
-  
-  // If API base is absolute (dev mode with hardcoded backend), use same origin for images
-  if (apiBase.startsWith('http')) {
-    const url = new URL(apiBase);
-    // Extract the origin (e.g., http://localhost:4000)
-    return `${url.origin}${path}`;
-  }
-  
-  // If API base is relative (production Docker same-origin), use relative path for images
-  return path;
-};
+import { getImageURL } from '@/lib/api';
 
 interface MenuItem {
   id: string;
@@ -79,6 +61,12 @@ export const AdminMenuSection = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleImageRenderError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = event.currentTarget;
+    target.onerror = null;
+    target.src = '/placeholder.svg';
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -294,7 +282,7 @@ export const AdminMenuSection = () => {
               <CardContent className="p-2">
                 <div className="h-28 bg-muted overflow-hidden rounded mb-2">
                   {cat.image_url ? (
-                    <img src={getImageURL(cat.image_url)} alt={cat.name} className="w-full h-full object-cover" />
+                    <img src={getImageURL(cat.image_url)} alt={cat.name} className="w-full h-full object-cover" onError={handleImageRenderError} />
                   ) : (
                     <div className="h-full flex items-center justify-center text-muted-foreground">No image</div>
                   )}
@@ -551,7 +539,7 @@ export const AdminMenuSection = () => {
               <div className="relative aspect-[3/1] rounded-lg border-2 border-dashed bg-muted/50 overflow-hidden">
                 {categoryImagePreview ? (
                   <>
-                    <img src={getImageURL(categoryImagePreview)} alt="Preview" className="h-full w-full object-cover" />
+                    <img src={getImageURL(categoryImagePreview)} alt="Preview" className="h-full w-full object-cover" onError={handleImageRenderError} />
                     <button onClick={() => { setCategoryImagePreview(''); setSelectedCategoryImage(null); }} className="absolute top-2 right-2 bg-destructive text-white rounded-full p-1">
                       <X className="h-4 w-4" />
                     </button>

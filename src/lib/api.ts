@@ -6,24 +6,163 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 // Helper to construct full image URLs from stored relative paths
 export const getImageURL = (path: string) => {
   if (!path) return '';
+  
+  // If it's already a full URL or data URI, return as is
   if (
     path.startsWith('http') ||
+    path.startsWith('path:') ||
     path.startsWith('data:') ||
     path.startsWith('blob:')
   ) {
     return path;
   }
+
+  // Handle legacy filenames that lack the /uploads/ prefix
+  let normalizedPath = path;
+  
+  // If path doesn't contain a slash, it's likely a raw filename from legacy data
+  if (!path.includes('/')) {
+    if (path.includes('_categories')) {
+      normalizedPath = `/uploads/categories/${path}`;
+    } else if (path.includes('_products') || path.includes('_thumb')) {
+      normalizedPath = `/uploads/products/${path}`;
+    } else {
+      // Fallback: try root uploads if we can't guess
+      normalizedPath = `/uploads/${path}`;
+    }
+  }
+
+  // Ensure leading slash
+  if (!normalizedPath.startsWith('/')) {
+    normalizedPath = `/${normalizedPath}`;
+  }
+
   try {
     if (API_BASE_URL.startsWith('http')) {
       const url = new URL(API_BASE_URL);
-      return `${url.origin}${path.startsWith('/') ? '' : '/'}${path}`;
+      return `${url.origin}${normalizedPath}`;
     }
-    // If API_BASE_URL is relative (eg. '/api'), construct absolute URL using window.location
+    
     const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
-    return `${origin}${path.startsWith('/') ? '' : '/'}${path}`;
+    return `${origin}${normalizedPath}`;
   } catch (e) {
-    return path;
+    console.warn('Error constructing image URL:', e, { path, API_BASE_URL });
+    return normalizedPath;
   }
+};
+
+const normalizeVariantName = (tier: Partial<TierPricingRule>) =>
+  String(tier.name ?? tier.tier_name ?? tier.label ?? '').trim();
+
+const slugifyVariantName = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'variant';
+
+export const getProductVariants = (item: Pick<MenuItem, 'tierPricing' | 'tier_pricing'> | null | undefined): ProductVariant[] => {
+  if (!item) return [];
+  const tiers = [...(item.tierPricing || item.tier_pricing || [])];
+
+  return tiers
+    .map((tier, index) => {
+      const name = normalizeVariantName(tier);
+      const price = Number(tier.price ?? 0);
+
+      if (!name || !Number.isFinite(price) || price <= 0) {
+        return null;
+      }
+
+      return {
+        id: `${slugifyVariantName(name)}-${index}`,
+        name,
+        price,
+      };
+    })
+    .filter((variant): variant is ProductVariant => Boolean(variant));
+};
+
+export const getSelectedProductVariant = (
+  item: Pick<MenuItem, 'tierPricing' | 'tier_pricing'>,
+  variantName?: string | null,
+) => {
+  if (!variantName) return undefined;
+
+  return getProductVariants(item).find(
+    (variant) => variant.name.toLowerCase() === variantName.trim().toLowerCase(),
+  );
+};
+
+export const hasNamedVariants = (item: Pick<MenuItem, 'tierPricing' | 'tier_pricing'>) =>
+  getProductVariants(item).length > 0;
+
+export const getMenuItemStartingPrice = (item: Pick<MenuItem, 'price' | 'tierPricing' | 'tier_pricing'>) => {
+  const prices = [
+    Number(item.price) || 0,
+    ...getProductVariants(item).map((variant) => variant.price),
+  ].filter((price) => Number.isFinite(price) && price > 0);
+
+  return prices.length > 0 ? Math.min(...prices) : 0;
+};
+
+export const resolveTierUnitPrice = (item: Pick<MenuItem, 'price' | 'tierPricing' | 'tier_pricing'> | null | undefined, quantity: number) => {
+  if (!item) return 0;
+  const tiers = [...(item.tierPricing || item.tier_pricing || [])]
+    .filter((tier) => Number(tier.min_quantity) > 1 && Number(tier.price) > 0)
+    .sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
+
+  let unitPrice = Number(item.price) || 0;
+  for (const tier of tiers) {
+    if (quantity >= Number(tier.min_quantity)) {
+      unitPrice = Number(tier.price);
+    }
+  }
+  return unitPrice;
+};
+
+export const resolveMenuItemUnitPrice = (
+  item: Pick<MenuItem, 'price' | 'tierPricing' | 'tier_pricing'> | null | undefined,
+  {
+    quantity = 1,
+    variantNames = [],
+  }: {
+    quantity?: number;
+    variantNames?: string[];
+  } = {},
+) => {
+  if (!item) return 0;
+  const basePrice = resolveTierUnitPrice(item, quantity);
+  
+  if (!variantNames || variantNames.length === 0) {
+    return basePrice;
+  }
+
+  const allVariants = getProductVariants(item);
+  const selectedVariants = allVariants.filter(v => 
+    variantNames.some(name => name.toLowerCase() === v.name.toLowerCase())
+  );
+
+  // Simple Pricing Rule:
+  // If no variants are selected, use the base price (volume discount applied)
+  // If one or more variants are selected, we treat them as independent items.
+  // When adding multiple variants at once from the UI, the CartContext will call 
+  // this function separately for each variant to ensure separate line items.
+  
+  if (selectedVariants.length === 0) {
+    return basePrice;
+  }
+
+  // If multiple are selected (legacy/combine), sum their prices
+  const variantSum = selectedVariants.reduce((sum, v) => sum + v.price, 0);
+  
+  // Rule: If a variant is selected, it typically REPLACES the base product's base price 
+  // unless specifically designed as an addon.
+  // For most variants (Small, Medium, Large), the variant price IS the full price.
+  return variantSum;
+};
+
+export const getCartItemVariantLabels = (options?: CartItemOptions): string[] => {
+  const variant = options?.variant;
+  if (Array.isArray(variant)) return variant;
+  if (typeof variant === 'string' && variant.trim()) return [variant.trim()];
+  return [];
 };
 
 // Token storage keys (unified with AuthContext)
@@ -109,7 +248,11 @@ export const apiFetch = async <T>(
       }
     }
     const error = await response.json().catch(() => ({ message: 'Network error' }));
-    throw new Error(error.message || 'Something went wrong');
+    const detailedMessage =
+      error.message ||
+      error.error ||
+      'Something went wrong';
+    throw new Error(detailedMessage);
   }
 
   return response.json();
@@ -173,6 +316,9 @@ export const api = {
       isFeatured: item.is_featured === true,
       is_featured: item.is_featured === true,
       rating: item.rating ? Number(item.rating) : undefined,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      tierPricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
+      tier_pricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
     })) as MenuItem[];
   },
 
@@ -201,6 +347,9 @@ export const api = {
       isAvailable: item.is_available !== false,
       isFeatured: item.is_featured === true,
       rating: item.rating ? Number(item.rating) : undefined,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      tierPricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
+      tier_pricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
     } as MenuItem;
   },
 
@@ -208,10 +357,10 @@ export const api = {
     const data = await apiFetch<any[]>('/menu/featured');
     return data.map(item => ({
       id: item.id,
-      name: item.name,
-      description: item.description || '',
-      price: Number(item.price) || 0,
-      originalPrice: item.original_price ? Number(item.original_price) : undefined,
+    // Expose token helpers for convenience (used by AuthContext)
+    setAuthToken,
+    getAuthToken,
+    clearAuth,
       image: item.image_url || '',
       image_url: item.image_url || '',
       secondaryImage: item.secondary_image_url || '',
@@ -221,6 +370,9 @@ export const api = {
       isAvailable: item.is_available !== false,
       isFeatured: item.is_featured === true,
       rating: item.rating ? Number(item.rating) : undefined,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      tierPricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
+      tier_pricing: Array.isArray(item.tier_pricing) ? item.tier_pricing : [],
     })) as MenuItem[];
   },
 
@@ -282,6 +434,7 @@ export const api = {
       items: (order.items || order.order_items || []).map((item: any) => ({
         id: item.id,
         quantity: item.quantity,
+        unitPrice: Number(item.unit_price) || 0,
         totalPrice: Number(item.total_price) || 0,
         menuItem: {
           id: item.menu_item_id || item.id,
@@ -314,6 +467,7 @@ export const api = {
       items: (order.items || order.order_items || []).map((item: any) => ({
         id: item.id,
         quantity: item.quantity,
+        unitPrice: Number(item.unit_price) || 0,
         totalPrice: Number(item.total_price) || 0,
         menuItem: {
           id: item.menu_item_id || item.id,
@@ -338,6 +492,36 @@ export const api = {
   deleteAdminCustomer: (id: string) => apiFetch<void>(`/admin/customers/${id}`, { method: 'DELETE' }),
   // Admin utility
   clearAllOrdersAdmin: () => apiFetch<void>('/admin/orders/clear', { method: 'DELETE' }),
+  clearMpesaTransactionsAdmin: () => apiFetch<void>('/admin/mpesa/clear', { method: 'DELETE' }),
+  
+  // Admin exports
+  exportUsers: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/export/users`, {
+      headers: {
+        'Authorization': `Bearer ${getAuthToken()}`,
+      },
+    });
+    if (!response.ok) throw new Error('Failed to export users');
+    return response.blob();
+  },
+  exportTransactions: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/export/transactions`, {
+      headers: {
+        'Authorization': `Bearer ${getAuthToken()}`,
+      },
+    });
+    if (!response.ok) throw new Error('Failed to export transactions');
+    return response.blob();
+  },
+  exportMpesaPayments: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/export/mpesa`, {
+      headers: {
+        'Authorization': `Bearer ${getAuthToken()}`,
+      },
+    });
+    if (!response.ok) throw new Error('Failed to export M-Pesa payments');
+    return response.blob();
+  },
 
 
 
@@ -404,6 +588,10 @@ export const api = {
     apiFetch<any>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token: string, new_password: string) =>
     apiFetch<any>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
+  resendWelcomeEmail: () =>
+    apiFetch<any>('/auth/resend-welcome', { method: 'POST' }),
+  resendResetEmail: (email: string) =>
+    apiFetch<any>('/auth/resend-reset', { method: 'POST', body: JSON.stringify({ email }) }),
 
   // Sessions (refresh token management)
   getSessions: () => apiFetch<Array<{ token: string; createdAt: string; expiresAt: string }>>('/auth/sessions'),
@@ -478,8 +666,26 @@ export interface MenuItem {
   categoryId: string;
   isAvailable: boolean;
   isFeatured?: boolean;
+  is_featured?: boolean;
   rating?: number;
   options?: MenuItemOption[];
+  tags?: string[];
+  tier_pricing?: TierPricingRule[];
+  tierPricing?: TierPricingRule[];
+}
+
+export interface TierPricingRule {
+  label?: string;
+  name?: string;
+  tier_name?: string;
+  min_quantity?: number;
+  price: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  name: string;
+  price: number;
 }
 
 export interface MenuItemOption {
@@ -498,6 +704,7 @@ export interface CartItem {
   id: string;
   menuItem: MenuItem;
   quantity: number;
+  unitPrice: number;
   options?: CartItemOptions;
   totalPrice: number;
   notes?: string;

@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   Bell,
-  Send
+  Send,
+  ArrowUp
 } from 'lucide-react';
 import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { Logo } from '@/components/ui/Logo';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEffect, useRef } from 'react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -43,12 +45,31 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const mainContentRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {
     await logout();
     toast.success('Logged out successfully');
     navigate('/');
+  };
+
+  // Handle scroll to top visibility
+  useEffect(() => {
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLDivElement;
+      setShowScrollTop(target.scrollTop > 300);
+    };
+
+    const mainContent = mainContentRef.current;
+    mainContent?.addEventListener('scroll', handleScroll);
+    return () => mainContent?.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
 
@@ -142,8 +163,20 @@ export const AdminLayout = ({ children, title }: AdminLayoutProps) => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-4 lg:p-6 overflow-auto relative" ref={mainContentRef}>
           {children}
+          
+          {/* Scroll to Top Button */}
+          {showScrollTop && (
+            <button
+              onClick={scrollToTop}
+              className="fixed bottom-6 right-6 z-40 p-3 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4"
+              aria-label="Scroll to top"
+              title="Scroll to top"
+            >
+              <ArrowUp className="h-5 w-5" />
+            </button>
+          )}
         </main>
       </div>
     </div>
