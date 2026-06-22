@@ -130,13 +130,13 @@ const App = () => {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    armSplashToneOnFirstInteraction();
-
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 1800);
     return () => clearTimeout(timer);
   }, []);
+
+
 
   if (showSplash) {
     return (
@@ -178,7 +178,7 @@ export default App;
 // SSE listener component
 import React from 'react';
 import { API_BASE_URL } from '@/lib/api';
-import { armSplashToneOnFirstInteraction, playNotificationTune } from '@/lib/sound';
+import { playNotificationTune } from '@/lib/sound';
 
 import { useNotifications } from '@/contexts/NotificationContext';
 

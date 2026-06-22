@@ -1,4 +1,4 @@
-const CACHE_NAME = 'speedy-bites-v3';
+const CACHE_NAME = 'speedy-bites-v4';
 const STATIC_ASSETS = [
     '/',
     '/index.html',

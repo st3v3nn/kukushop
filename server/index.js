@@ -217,6 +217,7 @@ let pool;
     logger.info('✅ Database connection pool ready');
     // Ensure rider_orders table exists and seed sample data in development
     try {
+      await ensureUsersTable();
       await ensureAuthSchema();
       await ensureMenuTables();
       await ensureRiderOrdersTable();
@@ -228,6 +229,7 @@ let pool;
       await ensureRefreshTokensAuditTable();
       await ensureFavoritesTable();
       await ensureNotificationsTable();
+      await seedAdminUserIfEmpty();
       await seedRiderOrdersIfEmpty();
       logger.info('✅ DB helper tables ensured and rider orders seeded (if empty)');
     } catch (err) {
@@ -274,8 +276,10 @@ const generateToken = () => {
 };
 
 // Hash password (simple implementation for demo)
+const bcrypt = require('bcryptjs');
+
 const hashPassword = (password) => {
-  return crypto.createHash('sha256').update(String(password || '')).digest('hex');
+  return bcrypt.hashSync(String(password || ''), 10);
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
@@ -285,8 +289,7 @@ const verifyPasswordHash = async (password, storedHash) => {
 
   if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
     try {
-      const bcrypt = require('bcryptjs');
-      return { valid: await bcrypt.compare(password, storedHash), needsRehash: false };
+      return { valid: await bcrypt.compare(String(password || ''), storedHash), needsRehash: false };
     } catch (err) {
       console.error('Failed to verify bcrypt password hash:', err);
       return { valid: false, needsRehash: false };
@@ -297,7 +300,12 @@ const verifyPasswordHash = async (password, storedHash) => {
     return { valid: true, needsRehash: true };
   }
 
-  return { valid: hashPassword(password) === storedHash, needsRehash: false };
+  const legacyHash = crypto.createHash('sha256').update(String(password || '')).digest('hex');
+  if (legacyHash === storedHash) {
+    return { valid: true, needsRehash: true };
+  }
+
+  return { valid: false, needsRehash: false };
 };
 
 const parseProductTags = (raw) => {
@@ -341,12 +349,16 @@ const parseTierPricing = (raw) => {
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
+    logger.info('[LOGIN] Request received', { method: req.method, url: req.url });
     // Log raw body when available to help debug proxied requests
-    if (req.rawBody) console.info('Raw login body:', req.rawBody);
+    if (req.rawBody) logger.info('Raw login body:', req.rawBody);
     const { email, password } = req.body;
+    logger.info('[LOGIN] Email:', email, 'Password length:', password?.length);
     const normalizedEmail = normalizeEmail(email);
+    logger.info('[LOGIN] Normalized email:', normalizedEmail);
 
     if (!normalizedEmail || !password) {
+      logger.info('[LOGIN] Missing email or password');
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
@@ -355,16 +367,21 @@ app.post('/api/auth/login', async (req, res) => {
       'SELECT * FROM public.users WHERE LOWER(TRIM(email)) = $1 AND COALESCE(is_active, true) = true',
       [normalizedEmail]
     );
+    logger.info('[LOGIN] Query found', rows.length, 'user(s)');
 
     if (rows.length === 0) {
+      logger.info('[LOGIN] No user found - returning 401');
       return res.status(401).json({ error: 'Invalid login credentials' });
     }
 
     const dbUser = rows[0];
+    logger.info('[LOGIN] User found:', dbUser.email, 'ID:', dbUser.id);
     const { valid: passwordValid, needsRehash } = await verifyPasswordHash(password, dbUser.password_hash);
+    logger.info('[LOGIN] Password valid:', passwordValid, 'Needs rehash:', needsRehash);
 
     // Verify password
     if (!passwordValid) {
+      logger.info('[LOGIN] Password verification failed - returning 401');
       return res.status(401).json({ error: 'Invalid login credentials' });
     }
 
@@ -924,6 +941,55 @@ const ensureRefreshTokensTable = async () => {
     `);
   } catch (err) {
     console.error('Failed to ensure refresh_tokens table:', err);
+  }
+};
+
+// Ensure users table exists
+const ensureUsersTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT,
+        phone TEXT,
+        role TEXT NOT NULL DEFAULT 'customer',
+        is_active BOOLEAN DEFAULT true,
+        avatar_url TEXT,
+        last_login TIMESTAMPTZ,
+        reset_token TEXT,
+        reset_token_expires TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+  } catch (err) {
+    console.error('Failed to ensure users table:', err);
+  }
+};
+
+const seedAdminUserIfEmpty = async () => {
+  try {
+    const { rows } = await pool.query('SELECT count(*) FROM public.users');
+    if (parseInt(rows[0].count, 10) !== 0) return;
+
+    let adminEmail = process.env.ADMIN_EMAIL;
+    let adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      adminEmail = 'admin@kukunisisi.co.ke';
+      adminPassword = 'KukuNisiS!23';
+      console.warn('ADMIN_EMAIL or ADMIN_PASSWORD not set; seeding default admin account. Change credentials immediately after first login.');
+    }
+
+    const passwordHash = hashPassword(adminPassword);
+    await pool.query(
+      'INSERT INTO public.users (email, password_hash, name, role, is_active, created_at, updated_at) VALUES ($1,$2,$3,$4,true,now(),now())',
+      [adminEmail, passwordHash, 'Admin', 'admin']
+    );
+    console.info(`Created seeded admin user ${adminEmail} with default or configured credentials`);
+  } catch (err) {
+    console.error('Failed to seed admin user:', err);
   }
 };
 

@@ -17,12 +17,12 @@ if [ -z "$DB_CONTAINER" ]; then echo "DB container not found"; exit 1; fi
 # Apply migrations
 for f in server/migrations/*.sql; do
   echo "Applying migration: $f"
-  docker exec -i $DB_CONTAINER psql -U speedy_admin -d speedy_bites -v ON_ERROR_STOP=1 -f - < "$f"
+  docker exec -i $DB_CONTAINER psql -U mike_admin -d speedy_bites -v ON_ERROR_STOP=1 -f - < "$f"
 done
 
 # Optional cleanup (uncomment if desired)
 # echo "Running cleanup"
-# docker exec -i $DB_CONTAINER psql -U speedy_admin -d speedy_bites -v ON_ERROR_STOP=1 <<'SQL'
+# docker exec -i $DB_CONTAINER psql -U mike_admin -d speedy_bites -v ON_ERROR_STOP=1 <<'SQL'
 # -- cleanup SQL here
 # SQL
 

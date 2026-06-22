@@ -11,7 +11,12 @@ APP_DIR=/opt/kukunisisi
 CERTS_DIR=${APP_DIR}/certs
 CERTBOT_WEBROOT=${APP_DIR}/certbot/www
 COMPOSE_FILE=${APP_DIR}/docker-compose.prod.yml
-EXPECTED_PUBLIC_IP=167.86.123.246
+EXPECTED_PUBLIC_IP=${EXPECTED_PUBLIC_IP:-$(curl -4 -s ifconfig.me || true)}
+
+if [ -z "$EXPECTED_PUBLIC_IP" ]; then
+  echo "Unable to determine this VPS public IP. Please set EXPECTED_PUBLIC_IP or verify network connectivity."
+  exit 1
+fi
 
 if [ -z "$REPO_URL" ]; then
   echo "Usage: sudo $0 <git_repo_url> [branch]"
@@ -106,7 +111,7 @@ DB_CONTAINER=$(docker compose -f docker-compose.prod.yml ps -q db)
 if [ -n "$DB_CONTAINER" ]; then
   for f in server/migrations/*.sql; do
     echo "Applying migration: $f"
-    docker exec -i $DB_CONTAINER psql -U speedy_admin -d speedy_bites -v ON_ERROR_STOP=1 -f - < "$f"
+    docker exec -i $DB_CONTAINER psql -U mike_admin -d speedy_bites -v ON_ERROR_STOP=1 -f - < "$f"
   done
 fi
 

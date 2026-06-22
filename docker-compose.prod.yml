@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   proxy:
     image: nginx:stable-alpine
@@ -29,6 +28,8 @@ services:
     env_file:
       - ./.env
     environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://mike_admin:Mwa$$0152@db:5432/speedy_bites
       MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET}
       MPESA_SHORTCODE: ${MPESA_SHORTCODE}
       MPESA_BUSINESS_SHORTCODE: ${MPESA_BUSINESS_SHORTCODE}
@@ -37,24 +38,30 @@ services:
       MPESA_SANDBOX: ${MPESA_SANDBOX}
       MPESA_PARTYB: ${MPESA_PARTYB}
       MPESA_TRANSACTION_TYPE: ${MPESA_TRANSACTION_TYPE}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ${UPLOAD_DIR:-/var/lib/kukunisisi/uploads}:${UPLOAD_DIR:-/var/lib/kukunisisi/uploads}:rw
     expose:
       - "4000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:15
     restart: unless-stopped
     environment:
-      POSTGRES_USER: speedy_admin
-      POSTGRES_PASSWORD: secure_password_here
+      POSTGRES_USER: mike_admin
+      POSTGRES_PASSWORD: Mwa$$0152
       POSTGRES_DB: speedy_bites
+    ports:
+      - "54812:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mike_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   db_data:

@@ -1,6 +1,22 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { armSplashToneOnFirstInteraction } from "./lib/sound";
+
+declare global {
+  interface Window {
+    deferredPrompt?: any;
+  }
+}
+
+// Arm chicken sound — first user tap after page load triggers the cluck
+armSplashToneOnFirstInteraction();
+
+// Capture the PWA install prompt before React mounts so it's never missed
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.deferredPrompt = e;
+});
 
 createRoot(document.getElementById("root")!).render(<App />);
 

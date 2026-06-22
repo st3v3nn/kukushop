@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, apiFetch, CreateOrderData, getCartItemVariantLabels } from '@/lib/api';
+import { playCheckoutCompleteSound } from '@/lib/sound';
 
 
 type PaymentMethod = 'mpesa' | 'cash';
@@ -85,6 +86,7 @@ export const CheckoutPage = () => {
         if (order.status === 'pending' || order.paymentStatus === 'paid') {
           setIsPaymentProcessing(false);
           toast.success('Payment confirmed! Order placed.');
+          playCheckoutCompleteSound();
           clearCart();
           navigate(`/order-confirmation/${orderId}`);
           return;
@@ -193,6 +195,7 @@ export const CheckoutPage = () => {
           }
         } else {
           toast.success('Order placed successfully!');
+          playCheckoutCompleteSound();
           clearCart();
           setTimeout(() => {
             navigate(`/order-confirmation/${response.orderId}`);

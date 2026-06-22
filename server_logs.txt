@@ -1,0 +1,19 @@
+server-1  | [dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+server-1  | [2026-05-25T08:41:17.686Z] [INFO] Configuration validated successfully
+server-1  | 🛡️ CORS initialized in mode: PRODUCTION
+server-1  | 🛡️ Allowed origins: [
+server-1  |   'https://kukunisisi.co.ke',
+server-1  |   'http://kukunisisi.co.ke',
+server-1  |   'https://www.kukunisisi.co.ke',
+server-1  |   'http://www.kukunisisi.co.ke',
+server-1  |   'http://144.91.99.168'
+server-1  | ]
+server-1  | 📁 Serving uploads from: /var/lib/kukunisisi/uploads
+server-1  | 📁 Serving legacy uploads from: /app/uploads
+server-1  | [2026-05-25T08:41:17.715Z] [INFO] 🚀 Server started {"port":4000,"host":"0.0.0.0","environment":"production","uploadDir":"/var/lib/kukunisisi/uploads"}
+server-1  | [2026-05-25T08:41:17.762Z] [INFO] Database connection pool initialized {"min":2,"max":20,"url":"postgresql://mike_admin:***@db:5432/speedy_bites"}
+server-1  | [2026-05-25T08:41:17.763Z] [INFO] Database health check started
+server-1  | [2026-05-25T08:41:17.763Z] [INFO] ✅ Database connection pool ready
+server-1  | ✅ Notifications table ready (with data column)
+server-1  | ✅ Mock orders cleanup completed
+server-1  | [2026-05-25T08:41:17.905Z] [INFO] ✅ DB helper tables ensured and rider orders seeded (if empty)
